@@ -57,16 +57,37 @@
                                 (alist-get 'name model))))))
                 models)))))
 
+(defun aidermacs--get-supported-models ()
+  "Get list of models supported by aider."
+  (with-temp-buffer
+    (call-process "aider" nil t nil "--list-models" "/")
+    (let ((models (seq-filter
+                  (lambda (line)
+                    (string-prefix-p "- " line))
+                  (split-string (buffer-string) "\n" t))))
+      (setq models (mapcar (lambda (line)
+                            (substring line 2)) ; Remove "- " prefix
+                          models))
+      (message "Supported models: %S" models)
+      models)))
+
 (defun aidermacs--get-available-models ()
   "Get list of available models from multiple providers."
-  (let ((models nil))
+  (let ((models nil)
+        (supported-models (aidermacs--get-supported-models)))
     (dolist (url '("https://api.openai.com/v1"
                    "https://openrouter.ai/api/v1"
                    "https://api.deepseek.com"
                    "https://api.anthropic.com/v1"
                    "https://generativelanguage.googleapis.com/v1beta"))
       (condition-case err
-          (setq models (append models (fetch-openai-compatible-models url)))
+          (let* ((fetched-models (fetch-openai-compatible-models url))
+                 (filtered-models (seq-filter (lambda (model)
+                                             (member model supported-models))
+                                           fetched-models)))
+            (message "Fetched models from %s: %S" url fetched-models)
+            (message "Filtered models from %s: %S" url filtered-models)
+            (setq models (append models filtered-models)))
         (error (message "Failed to fetch models from %s: %s" url err))))
     models))
 
