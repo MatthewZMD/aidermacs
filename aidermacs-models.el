@@ -9,22 +9,54 @@
   "Model selection customization for aidermacs."
   :group 'aidermacs)
 
-(defcustom aidermacs-popular-models
-  '("anthropic/claude-3-5-sonnet-20241022"  ;; really good in practical
-    "o3-mini" ;; very powerful
-    "gemini/gemini-2.0-flash"  ;; free
-    "r1"  ;; performance match o1, price << claude sonnet. weakness: small context
-    "deepseek/deepseek-chat"  ;; chatgpt-4o level performance, price is 1/100. weakness: small context
-    )
-  "List of available AI models for selection.
-Each model should be in the format expected by the aidermacs command line interface.
-Also based on aidermacs LLM benchmark: https://aidermacs.chat/docs/leaderboards/"
-  :type '(repeat string)
-  :group 'aidermacs-models)
+(require 'json)
+(require 'url)
+
+(defun fetch-openai-compatible-models (url)
+  "Fetch available models from an OpenAI compatible API endpoint at URL."
+  (let* ((url-parsed (url-generic-parse-url url))
+         (hostname (url-host url-parsed))
+         (prefix (cond ((string= hostname "api.openai.com") "openai")
+                      ((string= hostname "openrouter.ai") "openrouter")
+                      ((string= hostname "api.deepseek.com") "deepseek")
+                      ((string= hostname "api.anthropic.com") "anthropic")
+                      (t (error "Unknown API host: %s" hostname))))
+         (token (cond ((string= hostname "api.openai.com") (getenv "OPENAI_API_KEY"))
+                     ((string= hostname "openrouter.ai") (getenv "OPENROUTER_API_KEY"))
+                     ((string= hostname "api.deepseek.com") (getenv "DEEPSEEK_API_KEY"))
+                     ((string= hostname "api.anthropic.com") (getenv "ANTHROPIC_API_KEY"))
+                     (t (error "Unknown API host: %s" hostname)))))
+    (with-current-buffer
+        (let ((url-request-extra-headers
+               (if (string= hostname "api.anthropic.com")
+                   `(("x-api-key" . ,token)
+                     ("anthropic-version" . "2023-06-01"))
+                 `(("Authorization" . ,(concat "Bearer " token))))))
+          (url-retrieve-synchronously (concat url "/models")))
+      (goto-char url-http-end-of-headers)
+      (let* ((json-object-type 'alist)
+             (json-data (json-read))
+             (models (alist-get 'data json-data)))
+        (mapcar (lambda (model)
+                  (concat prefix "/" (alist-get 'id model)))
+                models)))))
+
+(defun aidermacs--get-available-models ()
+  "Get list of available models from multiple providers."
+  (let ((models nil))
+    (dolist (url '("https://api.openai.com/v1"
+                   "https://openrouter.ai/api/v1"
+                   "https://api.deepseek.com"
+                   "https://api.anthropic.com/v1"))
+      (condition-case err
+          (setq models (append models (fetch-openai-compatible-models url)))
+        (error (message "Failed to fetch models from %s: %s" url err))))
+    models))
 
 (defun aidermacs--select-model ()
   "Private function for model selection with completion."
-  (completing-read "Select AI model: " aidermacs-popular-models nil t nil nil (car aidermacs-popular-models)))
+  (let ((models (aidermacs--get-available-models)))
+    (completing-read "Select AI model: " models nil t)))
 
 ;;;###autoload
 (defun aidermacs-change-model ()
