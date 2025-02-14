@@ -263,18 +263,27 @@ This is useful for working in monorepos where you want to limit aider's scope."
         (default-directory (file-truename default-directory)))
     (aidermacs-run nil)))
 
-(defun aidermacs--send-command (command &optional switch-to-buffer callback)
+(defun aidermacs--send-command (command &optional switch-to-buffer)
   "Send COMMAND to the corresponding aidermacs process.
-If SWITCH-TO-BUFFER is non-nil, switch to the aidermacs buffer.
-If CALLBACK is provided, it will be called with the command output when available."
+If SWITCH-TO-BUFFER is non-nil, switch to the aidermacs buffer."
   (let* ((buffer-name (aidermacs-buffer-name))
          (buffer (or (get-buffer buffer-name)
                      (progn (aidermacs-run)
                             (get-buffer buffer-name))))
          (processed-command (aidermacs--process-message-if-multi-line command)))
-    (aidermacs--send-command-backend buffer processed-command callback)
+    (aidermacs--send-command-backend buffer processed-command)
     (when (and switch-to-buffer (not (string= (buffer-name) buffer-name)))
       (aidermacs-switch-to-buffer))))
+
+(defun aidermacs--redirect-send-command (command callback)
+  "Send COMMAND to the corresponding aidermacs process in the background.
+CALLBACK will be called with the command output when available."
+  (let* ((buffer-name (aidermacs-buffer-name))
+         (buffer (or (get-buffer buffer-name)
+                     (progn (aidermacs-run)
+                            (get-buffer buffer-name))))
+         (processed-command (aidermacs--process-message-if-multi-line command)))
+    (aidermacs--redirect-send-command-backend buffer processed-command callback)))
 
 
 ;; Function to switch to the aidermacs buffer
@@ -434,8 +443,8 @@ Returns a deduplicated list of such file names."
   "List all files currently added to the chat session.
 Sends the \"/ls\" command and returns the list of files via callback."
   (interactive)
-  (aidermacs--send-command
-   "/ls" t
+  (aidermacs--redirect-send-command
+   "/ls"
    (lambda (output)
      (let ((files (aidermacs--parse-ls-output output)))
        (message "%s" (prin1-to-string files))
@@ -445,14 +454,13 @@ Sends the \"/ls\" command and returns the list of files via callback."
 (defun aidermacs-drop-file ()
   "Drop a file from the chat session by selecting from currently added files."
   (interactive)
-  (aidermacs--send-command
-   "/ls" t
+  (aidermacs--redirect-send-command
+   "/ls"
    (lambda (output)
-     (with-local-quit
-       (if-let* ((files (aidermacs--parse-ls-output output))
-                 (file (completing-read "Select file to drop: " files nil t)))
-           (aidermacs--send-command (format "/drop %s" file))
-         (message "No files available to drop"))))))
+     (if-let* ((files (aidermacs--parse-ls-output output))
+               (file (completing-read "Select file to drop: " files nil t)))
+         (aidermacs--send-command (format "/drop ./%s" file))
+       (message "No files available to drop")))))
 
 
 ;;;###autoload

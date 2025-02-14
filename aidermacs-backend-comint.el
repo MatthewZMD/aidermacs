@@ -221,23 +221,10 @@ This allows for multi-line input without sending the command."
   (when (bufferp aidermacs--syntax-work-buffer)
     (kill-buffer aidermacs--syntax-work-buffer)))
 
-(defvar-local aidermacs--comint-output-temp ""
-  "Temporary output variable storing the raw output string.")
-
 (defun aidermacs-input-sender (proc string)
   "Reset font-lock state before executing a command."
   (aidermacs-reset-font-lock-state)
   (comint-simple-send proc (aidermacs--process-message-if-multi-line string)))
-
-(defun aidermacs--comint-output-filter (output)
-  "Accumulate OUTPUT string until a prompt is detected, then store it."
-  (unless (string-empty-p output)
-    (setq aidermacs--comint-output-temp
-          (concat aidermacs--comint-output-temp (substring-no-properties output)))
-    ;; Check if the output contains a prompt
-    (when (string-match-p "\n[^[:space:]]*>[[:space:]]$" aidermacs--comint-output-temp)
-      (aidermacs--store-output aidermacs--comint-output-temp)
-      (setq aidermacs--comint-output-temp ""))))
 
 (defun aidermacs-run-comint (program args buffer-name)
   "Create a comint-based buffer and run aidermacs PROGRAM with ARGS in BUFFER-NAME."
@@ -247,12 +234,12 @@ This allows for multi-line input without sending the command."
       (apply 'make-comint-in-buffer "aidermacs" buffer-name program nil args)
       (with-current-buffer buffer-name
         (comint-mode)
+        (setq-local comint-prompt-regexp "^> $")
         (setq-local comint-input-sender 'aidermacs-input-sender)
         (setq aidermacs--syntax-work-buffer
               (get-buffer-create (concat " *aidermacs-syntax" buffer-name)))
         (add-hook 'kill-buffer-hook #'aidermacs-kill-buffer nil t)
         (add-hook 'comint-output-filter-functions #'aidermacs-fontify-blocks 100 t)
-        (add-hook 'comint-output-filter-functions #'aidermacs--comint-output-filter)
         (let ((local-map (make-sparse-keymap)))
           (set-keymap-parent local-map comint-mode-map)
           (define-key local-map (kbd aidermacs-comint-multiline-newline-key) #'comint-accumulate)
@@ -272,6 +259,23 @@ This allows for multi-line input without sending the command."
                           'rear-nonsticky t))
       (set-marker (process-mark process) (point))
       (comint-send-string process (concat command "\n")))))
+
+(defun aidermacs--redirect-send-command-comint (buffer command)
+  "Send COMMAND to the aidermacs comint BUFFER and collect result into OUTPUT-BUFFER."
+  (with-current-buffer buffer
+    (let ((process (get-buffer-process buffer))
+          (output-buffer (get-buffer-create " *aider-redirect-buffer*")))
+      (with-current-buffer output-buffer
+        (erase-buffer))
+      (goto-char (process-mark process))
+      (comint-redirect-send-command command output-buffer nil t)
+      (unwind-protect
+          (while (or quit-flag (null comint-redirect-completed))
+            (accept-process-output nil 0.1))
+        (unless comint-redirect-completed
+          (comint-redirect-cleanup)))
+      (aidermacs--store-output (with-current-buffer output-buffer
+                                 (buffer-string))))))
 
 (provide 'aidermacs-backend-comint)
 
