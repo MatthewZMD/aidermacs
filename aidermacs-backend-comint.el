@@ -65,7 +65,6 @@ This allows for multi-line input without sending the command."
   "Face for search/replace block content."
   :group 'aidermacs)
 
-
 (defvar aidermacs-font-lock-keywords
   '(("^\x2500+\n?" 0 '(face aidermacs-command-separator) t)
     ("^\x2500+" 0 '(face nil display (space :width 2)))
@@ -96,6 +95,19 @@ This allows for multi-line input without sending the command."
   "Store the current block marker (SEARCH/REPLACE/fence) being processed.
 This variable holds the actual marker text (e.g., <<<<<<< SEARCH, =======, etc.)
 that was matched at the start of the current syntax block.")
+
+(defvar-local aidermacs--comint-output-temp ""
+  "Temporary output variable storing the raw output string.")
+
+(defun aidermacs--comint-output-filter (output)
+  "Accumulate OUTPUT string until a prompt is detected, then store it."
+  (when (and (aidermacs--is-aidermacs-buffer-p) (not (string-empty-p output)))
+    (setq aidermacs--comint-output-temp
+          (concat aidermacs--comint-output-temp (substring-no-properties output)))
+    ;; Check if the output contains a prompt
+    (when (string-match-p "\n[^[:space:]]*>[[:space:]]$" aidermacs--comint-output-temp)
+      (aidermacs--store-output aidermacs--comint-output-temp)
+      (setq aidermacs--comint-output-temp ""))))
 
 (defun aidermacs-reset-font-lock-state ()
   "Reset font lock state to default for processing a new source block."
@@ -239,7 +251,7 @@ _OUTPUT is the text to be processed."
        (cdr (cl-assoc-if (lambda (re) (string-match re file)) auto-mode-alist))))
    'fundamental-mode))
 
-(defun aidermacs-kill-buffer ()
+(defun aidermacs-kill-comint-syntax-fontify-buffer ()
   "Clean up the fontify buffer."
   (when (bufferp aidermacs--syntax-work-buffer)
     (kill-buffer aidermacs--syntax-work-buffer)))
@@ -264,8 +276,9 @@ BUFFER-NAME is the name for the aidermacs buffer."
         (setq-local comint-input-sender 'aidermacs-input-sender)
         (setq aidermacs--syntax-work-buffer
               (get-buffer-create (concat " *aidermacs-syntax" buffer-name)))
-        (add-hook 'kill-buffer-hook #'aidermacs-kill-buffer nil t)
+        (add-hook 'kill-buffer-hook #'aidermacs-kill-comint-syntax-fontify-buffer nil t)
         (add-hook 'comint-output-filter-functions #'aidermacs-fontify-blocks 100 t)
+        (add-hook 'comint-output-filter-functions #'aidermacs--comint-output-filter)
         (let ((local-map (make-sparse-keymap)))
           (set-keymap-parent local-map comint-mode-map)
           (define-key local-map (kbd aidermacs-comint-multiline-newline-key) #'comint-accumulate)

@@ -55,14 +55,6 @@
   :type 'string
   :group 'aidermacs)
 
-(defun aidermacs--is-aidermacs-vterm-buffer-p (&optional buffer)
-  "Check if BUFFER is an aidermacs vterm buffer.
-If BUFFER is nil, check the current buffer.
-Returns non-nil if the buffer name matches the aidermacs buffer pattern."
-  (let ((buf (or buffer (current-buffer))))
-    (and (derived-mode-p 'vterm-mode)
-         (string-match-p "^\\*aidermacs:" (buffer-name buf)))))
-
 (defun aidermacs--vterm-check-finish-sequence-repeated (proc orig-filter start-point expected)
   "Check for the finish sequence in PROC's buffer.
 PROC is the process to check.  ORIG-FILTER is the original process filter.
@@ -109,7 +101,7 @@ pattern to match.  If the finish sequence is detected, store the output via
 ORIG-FUN is the original function being advised.  ARGS are its arguments.
 This sets a temporary process filter that checks for the finish sequence
 after each output chunk, reducing the need for timers."
-  (if (aidermacs--is-aidermacs-vterm-buffer-p)
+  (if (aidermacs--is-aidermacs-buffer-p)
       (let* ((start-point (condition-case nil
                               (vterm--get-prompt-point)
                             (error (point-min))))
