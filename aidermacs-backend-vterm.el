@@ -45,6 +45,9 @@
 (declare-function aidermacs--is-aidermacs-buffer-p "aidermacs")
 (declare-function aidermacs-get-buffer-name "aidermacs")
 
+;; useful because we want to override "RET" key for evil mode insert state
+(declare-function evil-define-minor-mode-key "evil-core")
+
 (defvar-local aidermacs--vterm-active-timer nil
   "Store the active timer for vterm output processing.")
 
@@ -121,13 +124,13 @@ If the finish sequence is detected, store the output via
 (defvar-local aidermacs--vterm-processing-command nil
   "Flag to indicate if we're currently processing a command.")
 
-(defun aidermacs--vterm-output-advice (orig-fun &rest args)
+(defun aidermacs--vterm-capture-output ()
   "Capture vterm output until the finish sequence appears.
 ORIG-FUN is the original function being advised.  ARGS are its arguments.
 This sets a temporary process filter that checks for the finish sequence
 after each output chunk, reducing the need for timers."
-  (if (and (aidermacs--is-aidermacs-buffer-p)
-           (not (string-empty-p aidermacs--last-command)))
+  (when (and (aidermacs--is-aidermacs-buffer-p)
+             (not (string-empty-p aidermacs--last-command)))
       (let* ((start-point (condition-case nil
                               (vterm--get-prompt-point)
                             (error (point-min))))
@@ -136,8 +139,6 @@ after each output chunk, reducing the need for timers."
 
         ;; Store the command for tracking in the correct buffer
         (with-current-buffer (process-buffer proc)
-          (when (and args (car args) (stringp (car args)))
-            (setq aidermacs--last-command (car args)))
           ;; Set flag that we're processing a command
           (setq aidermacs--vterm-processing-command t)
           ;; Initialize tracking variables
@@ -152,9 +153,7 @@ after each output chunk, reducing the need for timers."
                  aidermacs-vterm-check-interval
                  (lambda ()
                    ; Check if we're still in a valid state
-                   (aidermacs--vterm-check-finish-sequence-repeated proc orig-filter start-point))))
-          (apply orig-fun args)))
-    (apply orig-fun args)))
+                   (aidermacs--vterm-check-finish-sequence-repeated proc orig-filter start-point))))))))
 
 (defun aidermacs--maybe-cancel-active-timer (&optional buffer)
   "Cancel the active timer if it exists.
@@ -181,14 +180,7 @@ BUFFER-NAME is the name for the vterm buffer."
         (setq-local vterm-max-scrollback 1000
                     aidermacs--vterm-active-timer nil
                     aidermacs--vterm-last-check-point nil)
-        (advice-add 'vterm-send-return :around #'aidermacs--vterm-output-advice)
-        (advice-add 'vterm-send-return :before #'aidermacs--vterm-capture-keyboard-input)
-        (advice-add 'vterm--self-insert :after #'aidermacs--cleanup-temp-files-on-interrupt-vterm)
-        ;; Set up multi-line keybinding
-        (let ((map (make-sparse-keymap)))
-          (set-keymap-parent map (current-local-map))
-          (define-key map (kbd aidermacs-vterm-multiline-newline-key) #'aidermacs-vterm-insert-newline)
-          (use-local-map map))
+        (aidermacs-vterm-mode 1)
         ;; Add cleanup hook
         (add-hook 'kill-buffer-hook #'aidermacs--vterm-cleanup nil t))))
   buffer-name)
@@ -207,7 +199,20 @@ BUFFER is the target buffer to send to.  COMMAND is the text to send."
       (setq-local aidermacs--last-command command)
       ;; Send the command
       (vterm-send-string command)
-      (vterm-send-return))))
+      (aidermacs-vterm-send-return))))
+
+(defun aidermacs-vterm-send-return ()
+  "Send return to the aidermacs vterm buffer, and process the output."
+  (interactive)
+  (aidermacs--vterm-capture-keyboard-input)
+  (aidermacs--vterm-capture-output)
+  (vterm-send-return))
+
+(defun aidermacs-vterm-send-C-c ()
+  "Send C-c to the aidermacs vterm buffer, and clenaup."
+  (interactive)
+  (vterm-send-C-c)
+  (aidermacs--cleanup-temp-files-on-interrupt-vterm))
 
 (defun aidermacs-vterm-insert-newline ()
   "Insert a newline in vterm without sending the command."
@@ -235,19 +240,34 @@ BUFFER is the target buffer to send to.  COMMAND is the text to send."
   "Clean up vterm resources when buffer is killed."
   (aidermacs--maybe-cancel-active-timer)
   (setq-local aidermacs--vterm-last-check-point nil)
-  (setq-local aidermacs--vterm-processing-command nil)
-  (advice-remove 'vterm-send-return #'aidermacs--vterm-capture-keyboard-input))
+  (setq-local aidermacs--vterm-processing-command nil))
 
-(defun aidermacs--cleanup-temp-files-on-interrupt-vterm (&rest _args)
+(defun aidermacs--cleanup-temp-files-on-interrupt-vterm ()
   "Run `aidermacs--cleanup-temp-buffers' after interrupting a vterm subjob.
 _ARGS are the arguments."
-  (when (and (aidermacs--is-aidermacs-buffer-p)
-             (equal (this-command-keys) "\C-c\C-c"))
+  (when (aidermacs--is-aidermacs-buffer-p)
     ;; Reset processing flag when user interrupts
     (setq-local aidermacs--vterm-processing-command nil)
     ;; Cancel any active timer
     (aidermacs--maybe-cancel-active-timer)
     (aidermacs--cleanup-temp-buffers)))
+
+
+(defvar aidermacs-vterm-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd aidermacs-vterm-multiline-newline-key) #'aidermacs-vterm-insert-newline)
+    (define-key map (kbd "RET") #'aidermacs-vterm-send-return)
+    (define-key map (kbd "C-c C-c") #'aidermacs-vterm-send-C-c)
+    (when (featurep 'evil)
+      (evil-define-minor-mode-key map 'insert
+          (kbd "RET") (function aidermacs-vterm-send-return)))
+    map)
+  "Keymap used when `aidermacs-vterm-mode' is enabled.")
+
+(define-minor-mode aidermacs-vterm-mode
+  "Minor mode for vterm backend buffer used by aidermacs."
+  :init-value nil
+  :keymap aidermacs-vterm-mode-map)
 
 (provide 'aidermacs-backend-vterm)
 ;;; aidermacs-backend-vterm.el ends here
