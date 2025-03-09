@@ -88,10 +88,8 @@ If the finish sequence is detected, store the output via
              (should-check (> prompt-point last-check))
              ;; Simplified pattern that just looks for a shell prompt
              (expected aidermacs-prompt-regexp))
-
         ;; Update the last check point
         (setq aidermacs--vterm-last-check-point prompt-point)
-
         (when should-check
           (let* ((seq-start (or (save-excursion
                                   (goto-char prompt-point)
@@ -103,13 +101,10 @@ If the finish sequence is detected, store the output via
                  (prompt-line-end (min (+ seq-start 200) (point-max)))
                  (prompt-line (buffer-substring-no-properties seq-start prompt-line-end))
                  (output (buffer-substring-no-properties start-point seq-start)))
-
             ;; Parse output for files
             (aidermacs--parse-output-for-files output)
-
             ;; If we found a shell prompt indicating output finished
             (when (string-match-p expected prompt-line)
-              (setq-local aidermacs--vterm-processing-command nil)
               (aidermacs--store-output (string-trim output))
               (let ((edited-files (aidermacs--detect-edited-files)))
                 ;; Check if any files were edited and show ediff if needed
@@ -120,9 +115,6 @@ If the finish sequence is detected, store the output via
                 ;; this command's output. This returns vterm to its normal behavior.
                 (set-process-filter proc orig-filter)
                 (aidermacs--maybe-cancel-active-timer (process-buffer proc))))))))))
-
-(defvar-local aidermacs--vterm-processing-command nil
-  "Flag to indicate if we're currently processing a command.")
 
 (defun aidermacs--vterm-capture-output ()
   "Capture vterm output until the finish sequence appears.
@@ -136,24 +128,18 @@ after each output chunk, reducing the need for timers."
                             (error (point-min))))
              (proc (get-buffer-process (current-buffer)))
              (orig-filter (process-filter proc)))
-
         ;; Store the command for tracking in the correct buffer
         (with-current-buffer (process-buffer proc)
-          ;; Set flag that we're processing a command
-          (setq aidermacs--vterm-processing-command t)
           ;; Initialize tracking variables
           (setq aidermacs--vterm-last-check-point nil)
           ;; Cancel any existing timer first
           (aidermacs--maybe-cancel-active-timer)
-
           ;; Create a new timer immediately to start checking for command completion
           (setq aidermacs--vterm-active-timer
                 (run-with-timer
                  aidermacs-vterm-check-interval
                  aidermacs-vterm-check-interval
-                 (lambda ()
-                   ; Check if we're still in a valid state
-                   (aidermacs--vterm-check-finish-sequence-repeated proc orig-filter start-point))))))))
+                 (lambda () (aidermacs--vterm-check-finish-sequence-repeated proc orig-filter start-point))))))))
 
 (defun aidermacs--maybe-cancel-active-timer (&optional buffer)
   "Cancel the active timer if it exists.
@@ -193,9 +179,7 @@ BUFFER is the target buffer to send to.  COMMAND is the text to send."
     (aidermacs--maybe-cancel-active-timer)
     ;; Only process if we have a non-empty command
     (when (and command (not (string-empty-p (string-trim command))))
-      ;; Set processing flag to true before sending command
-      (setq-local aidermacs--vterm-processing-command t)
-      ;; Store the command for tracking
+      ;; Store the command and reset output
       (setq-local aidermacs--last-command command)
       ;; Send the command
       (vterm-send-string command)
@@ -239,24 +223,21 @@ BUFFER is the target buffer to send to.  COMMAND is the text to send."
 (defun aidermacs--vterm-cleanup ()
   "Clean up vterm resources when buffer is killed."
   (aidermacs--maybe-cancel-active-timer)
-  (setq-local aidermacs--vterm-last-check-point nil)
-  (setq-local aidermacs--vterm-processing-command nil))
+  (setq-local aidermacs--vterm-last-check-point nil))
 
 (defun aidermacs--cleanup-temp-files-on-interrupt-vterm ()
   "Run `aidermacs--cleanup-temp-buffers' after interrupting a vterm subjob.
 _ARGS are the arguments."
   (when (aidermacs--is-aidermacs-buffer-p)
-    ;; Reset processing flag when user interrupts
-    (setq-local aidermacs--vterm-processing-command nil)
     ;; Cancel any active timer
     (aidermacs--maybe-cancel-active-timer)
     (aidermacs--cleanup-temp-buffers)))
-
 
 (defvar aidermacs-vterm-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd aidermacs-vterm-multiline-newline-key) #'aidermacs-vterm-insert-newline)
     (define-key map (kbd "RET") #'aidermacs-vterm-send-return)
+    (define-key map (kbd "<return>") #'aidermacs-vterm-send-return)
     (define-key map (kbd "C-c C-c") #'aidermacs-vterm-send-C-c)
     (when (featurep 'evil)
       (evil-define-minor-mode-key map 'insert
