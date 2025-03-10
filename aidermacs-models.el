@@ -162,19 +162,22 @@ This fetches models from various API providers and caches them."
                    (setq models (append models filtered-models)))
                (error (message "Failed to fetch models from %s: %s" url (error-message-string err)))))))
        (setq aidermacs--cached-models models)
-       (aidermacs--select-model)))))
+
+      (aidermacs--select-model)))))
 
 (defun aidermacs-clear-model-cache ()
   "Clear the cached models, forcing a fresh fetch on next use.
-This is useful when available models have changed."
+This is useful when available models have changed or when
+you want to ensure you're seeing the latest available models."
   (interactive)
   (setq aidermacs--cached-models nil)
-  (message "Model cache cleared"))
+  (message "Model cache cleared successfully"))
 
 ;;;###autoload
 (defun aidermacs-change-model ()
   "Interactively select and change AI model in current aidermacs session."
   (interactive)
+ 
   (when (and aidermacs--cached-models
              (equal aidermacs--cached-models aidermacs-popular-models)
              (fboundp 'aidermacs-get-buffer-name)
