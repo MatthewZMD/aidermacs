@@ -608,7 +608,7 @@ Returns a list of files that have been modified according to the output."
                             (when (y-or-n-p "Continue to next file? ")
                               (aidermacs--process-next-ediff-file))))
                         (use-local-map map)
-                        (message "Resolve conflicts with: C-c ^ n (next), C-c ^ p (prev), C-c ^ a/b (keep A/B). Press C-c C-n when done.")))
+                        (message "Resolve conflicts with: C-c ^ n (next), C-c ^ p (prev), C-c ^ u/l (keep Upper/Lower). Press C-c C-n when done.")))
                   ;; If no difference sections found, notify user and continue
                   (message "No differences found for %s" file)
                   (aidermacs--process-next-ediff-file))))))
