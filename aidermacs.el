@@ -381,42 +381,125 @@ This is skipped if `aidermacs-show-diff-after-change' is nil."
         (unless aidermacs--pre-edit-file-buffers
           (aidermacs--prepare-for-code-edit))))))
 
-(defun aidermacs--create-file-with-conflict-markers (original-content modified-content)
-  "Create a file with conflict markers using diff3 from ORIGINAL-CONTENT and MODIFIED-CONTENT.
-Returns a string with the merged content containing conflict markers."
+(defun aidermacs--create-smerge-hunks (original-content modified-content)
+  "Create a buffer with smerge conflict markers for individual hunks.
+ORIGINAL-CONTENT and MODIFIED-CONTENT are compared and differences
+are marked as conflicts for smerge-mode."
   (let ((temp-orig (make-temp-file "aidermacs-original-"))
         (temp-mod (make-temp-file "aidermacs-modified-"))
-        (temp-merged (make-temp-file "aidermacs-merged-"))
-        (merged-content ""))
+        (output-buffer (generate-new-buffer "*smerge-hunks*")))
+    
     (unwind-protect
         (progn
           ;; Write contents to temp files
           (with-temp-file temp-orig (insert original-content))
           (with-temp-file temp-mod (insert modified-content))
           
-          ;; Create a copy of original as the base for the merge
-          (copy-file temp-orig temp-merged t)
+          ;; First, get a regular diff to find all differences
+          (let ((diff-buffer (generate-new-buffer " *diff-output*")))
+            (unwind-protect
+                (progn
+                  ;; Get regular diff in unified format
+                  (call-process "diff" nil diff-buffer nil "-u" temp-orig temp-mod)
+                  
+                  ;; Insert original content
+                  (with-current-buffer output-buffer
+                    (insert original-content)
+                    
+                    ;; Parse diff output and insert conflict markers
+                    (let ((changes '())
+                          (in-hunk nil)
+                          (hunk-start 0)
+                          (orig-lines '())
+                          (mod-lines '()))
+                      
+                      (with-current-buffer diff-buffer
+                        (goto-char (point-min))
+                        ;; Skip the first 2 lines (diff headers)
+                        (forward-line 2)
+                        
+                        ;; Process each line of the diff output
+                        (while (not (eobp))
+                          (let ((line (buffer-substring-no-properties 
+                                      (line-beginning-position) 
+                                      (line-end-position))))
+                            
+                            (cond
+                             ;; Hunk header
+                             ((string-match "^@@\\s-*-\\([0-9]+\\),\\([0-9]+\\)\\s-*\\+\\([0-9]+\\),\\([0-9]+\\)\\s-*@@" line)
+                              (when in-hunk
+                                ;; Store the previous hunk
+                                (push (list hunk-start (nreverse orig-lines) (nreverse mod-lines)) changes))
+                              
+                              ;; Start new hunk
+                              (setq in-hunk t
+                                    hunk-start (string-to-number (match-string 1 line))
+                                    orig-lines '()
+                                    mod-lines '()))
+                             
+                             ;; Original line (removed)
+                             ((string-prefix-p "-" line)
+                              (push (substring line 1) orig-lines))
+                             
+                             ;; Modified line (added)
+                             ((string-prefix-p "+" line)
+                              (push (substring line 1) mod-lines))
+                             
+                             ;; Context line (unchanged)
+                             ((string-prefix-p " " line)
+                              (push (substring line 1) orig-lines)
+                              (push (substring line 1) mod-lines))))
+                          
+                          (forward-line 1)))
+                      
+                      ;; Add the last hunk if we were processing one
+                      (when in-hunk
+                        (push (list hunk-start (nreverse orig-lines) (nreverse mod-lines)) changes))
+                      
+                      ;; Apply changes from end to beginning to avoid position shifts
+                      (setq changes (nreverse changes))
+                      
+                      ;; Apply each change as a conflict
+                      (dolist (change changes)
+                        (let ((line-num (nth 0 change))
+                              (orig-text (nth 1 change))
+                              (mod-text (nth 2 change)))
+                          
+                          ;; Only create a conflict if there's an actual difference
+                          (when (not (equal orig-text mod-text))
+                            ;; Go to the right line in the buffer
+                            (goto-char (point-min))
+                            (forward-line (1- line-num))
+                            
+                            ;; Delete original content and insert conflict markers
+                            (let ((start-pos (point)))
+                              (forward-line (length orig-text))
+                              (delete-region start-pos (point))
+                              
+                              (insert "<<<<<<< Original\n")
+                              (dolist (line orig-text)
+                                (insert line "\n"))
+                              (insert "=======\n")
+                              (dolist (line mod-text)
+                                (insert line "\n"))
+                              (insert ">>>>>>> Modified\n"))))))))
+              
+              (when (buffer-live-p diff-buffer)
+                (kill-buffer diff-buffer))))
           
-          ;; Use diff3 to merge files with conflict markers
-          (call-process "diff3" nil nil nil 
-                        "--merge" 
-                        "-L" "Original" 
-                        "-L" "Base" 
-                        "-L" "AI Modified" 
-                        temp-merged  ;; Output file (merged)
-                        temp-orig    ;; Original  
-                        temp-mod)    ;; Modified
+          ;; Set up the buffer for smerge
+          (with-current-buffer output-buffer
+            (goto-char (point-min))
+            (smerge-mode 1))
           
-          ;; Read the merged content
-          (setq merged-content (with-temp-buffer
-                                (insert-file-contents temp-merged)
-                                (buffer-string))))
-      ;; Cleanup temp files
+          ;; Return the buffer content
+          (with-current-buffer output-buffer
+            (buffer-string)))
+      
+      ;; Cleanup
       (when (file-exists-p temp-orig) (delete-file temp-orig))
       (when (file-exists-p temp-mod) (delete-file temp-mod))
-      (when (file-exists-p temp-merged) (delete-file temp-merged)))
-    merged-content))
-
+      (when (buffer-live-p output-buffer) (kill-buffer output-buffer)))))
 
 (defun aidermacs--ediff-quit-handler ()
   "Handle ediff session cleanup and process next files in queue.
@@ -524,7 +607,7 @@ Returns a list of files that have been modified according to the output."
 
 (defun aidermacs--show-smerge-for-file (file)
   "Uses smerge to show differences between original and modified FILE.
-Generates conflict markers using diff3 program."
+Generates conflict markers for all changes, even those that could be automatically merged."
   (let* ((full-path (expand-file-name file (aidermacs-project-root)))
          (pre-edit-pair (assoc full-path aidermacs--pre-edit-file-buffers))
          (pre-edit-buffer (and pre-edit-pair (cdr pre-edit-pair))))
@@ -540,9 +623,11 @@ Generates conflict markers using diff3 program."
                   (inhibit-read-only t))
               ;; Save the current point position
               (let ((saved-point (point)))
-                ;; Generate merged content with conflict markers using diff3
-                (let ((merged-content (aidermacs--create-file-with-conflict-markers 
-                                      original-content modified-content)))
+                ;; Generate merged content with conflict markers
+                (let ((merged-content (aidermacs--create-smerge-hunks 
+                                      original-content 
+                                      modified-content)))
+                  
                   ;; Replace buffer content with the merged version
                   (erase-buffer)
                   (insert merged-content)
@@ -562,9 +647,13 @@ Generates conflict markers using diff3 program."
                         ;; Refine conflicts to show word-level differences
                         (save-excursion
                           (goto-char (point-min))
-                          (while (smerge-find-conflict)
-                            (smerge-refine)
-                            (smerge-next)))
+                          (condition-case nil
+                              (while (smerge-find-conflict)
+                                (smerge-refine)
+                                (condition-case nil
+                                    (smerge-next)
+                                  (user-error nil)))
+                            (user-error nil)))
                         
                         ;; Add key binding to continue to next file
                         (let ((map (make-sparse-keymap)))
