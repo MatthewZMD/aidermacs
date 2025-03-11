@@ -579,7 +579,7 @@ Returns a list of files that have been modified according to the output."
                               (mod-end (nth 3 section)))
                           (goto-char orig-start)
                           (delete-region orig-start orig-end)
-                          (insert "\n<<<<<<< Original\n")
+                          (insert "<<<<<<< Original\n")
                           (insert (substring original-content orig-start orig-end))
                           (insert "\n=======\n")
                           (insert (substring modified-content mod-start mod-end))
