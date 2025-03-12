@@ -105,6 +105,15 @@ This is the file name without path."
   :type 'string
   :group 'aidermacs)
 
+(defcustom aidermacs-diff-provider 'ediff
+  "The diff provider to use for showing differences in files modified by Aider.
+Options are:
+- `ediff': Use ediff to show differences in separate comparison buffers (default).
+- `smerge': Use smerge to show and resolve differences within the file buffer."
+  :type '(choice (const :tag "Ediff" ediff)
+                 (const :tag "Smerge" smerge))
+  :group 'aidermacs)
+
 (defvar aidermacs-prompt-regexp "^[^[:space:]<]*>[[:space:]]+$"
   "Regexp to match Aider's command prompt.")
 
@@ -373,6 +382,126 @@ This is skipped if `aidermacs-show-diff-after-change' is nil."
         (unless aidermacs--pre-edit-file-buffers
           (aidermacs--prepare-for-code-edit))))))
 
+(defun aidermacs--create-smerge-hunks (original-content modified-content)
+  "Create a buffer with smerge conflict markers for individual hunks.
+ORIGINAL-CONTENT and MODIFIED-CONTENT are compared and differences
+are marked as conflicts for smerge-mode."
+  (let ((temp-orig (make-temp-file "aidermacs-original-"))
+        (temp-mod (make-temp-file "aidermacs-modified-"))
+        (output-buffer (generate-new-buffer "*smerge-hunks*")))
+    
+    (unwind-protect
+        (progn
+          ;; Write contents to temp files
+          (with-temp-file temp-orig (insert original-content))
+          (with-temp-file temp-mod (insert modified-content))
+          
+          ;; First, get a regular diff to find all differences
+          (let ((diff-buffer (generate-new-buffer " *diff-output*")))
+            (unwind-protect
+                (progn
+                  ;; Get regular diff in unified format
+                  (call-process "diff" nil diff-buffer nil "-u" temp-orig temp-mod)
+                  
+                  ;; Insert original content
+                  (with-current-buffer output-buffer
+                    (insert original-content)
+                    
+                    ;; Parse diff output and insert conflict markers
+                    (let ((changes '())
+                          (in-hunk nil)
+                          (hunk-start 0)
+                          (orig-lines '())
+                          (mod-lines '()))
+                      
+                      (with-current-buffer diff-buffer
+                        (goto-char (point-min))
+                        ;; Skip the first 2 lines (diff headers)
+                        (forward-line 2)
+                        
+                        ;; Process each line of the diff output
+                        (while (not (eobp))
+                          (let ((line (buffer-substring-no-properties 
+                                      (line-beginning-position) 
+                                      (line-end-position))))
+                            
+                            (cond
+                             ;; Hunk header
+                             ((string-match "^@@\\s-*-\\([0-9]+\\),\\([0-9]+\\)\\s-*\\+\\([0-9]+\\),\\([0-9]+\\)\\s-*@@" line)
+                              (when in-hunk
+                                ;; Store the previous hunk
+                                (push (list hunk-start (nreverse orig-lines) (nreverse mod-lines)) changes))
+                              
+                              ;; Start new hunk
+                              (setq in-hunk t
+                                    hunk-start (string-to-number (match-string 1 line))
+                                    orig-lines '()
+                                    mod-lines '()))
+                             
+                             ;; Original line (removed)
+                             ((string-prefix-p "-" line)
+                              (push (substring line 1) orig-lines))
+                             
+                             ;; Modified line (added)
+                             ((string-prefix-p "+" line)
+                              (push (substring line 1) mod-lines))
+                             
+                             ;; Context line (unchanged)
+                             ((string-prefix-p " " line)
+                              (push (substring line 1) orig-lines)
+                              (push (substring line 1) mod-lines))))
+                          
+                          (forward-line 1)))
+                      
+                      ;; Add the last hunk if we were processing one
+                      (when in-hunk
+                        (push (list hunk-start (nreverse orig-lines) (nreverse mod-lines)) changes))
+                      
+                      ;; Apply changes from end to beginning to avoid position shifts
+                      (setq changes (nreverse changes))
+                      
+                      ;; Apply each change as a conflict
+                      (dolist (change changes)
+                        (let ((line-num (nth 0 change))
+                              (orig-text (nth 1 change))
+                              (mod-text (nth 2 change)))
+                          
+                          ;; Only create a conflict if there's an actual difference
+                          (when (not (equal orig-text mod-text))
+                            ;; Go to the right line in the buffer
+                            (goto-char (point-min))
+                            (forward-line (1- line-num))
+                            
+                            ;; Delete original content and insert conflict markers
+                            (let ((start-pos (point)))
+                              (forward-line (length orig-text))
+                              (delete-region start-pos (point))
+                              
+                              (insert "<<<<<<< Original\n")
+                              (dolist (line orig-text)
+                                (insert line "\n"))
+                              (insert "=======\n")
+                              (dolist (line mod-text)
+                                (insert line "\n"))
+                              (insert ">>>>>>> Modified\n"))))))))
+              
+              (when (buffer-live-p diff-buffer)
+                (kill-buffer diff-buffer))))
+          
+          ;; Set up the buffer for smerge
+          (with-current-buffer output-buffer
+            (goto-char (point-min))
+            (smerge-mode 1))
+          
+          ;; Return the buffer content
+          (with-current-buffer output-buffer
+            (buffer-string)))
+      
+      ;; Cleanup
+      (when (file-exists-p temp-orig) (delete-file temp-orig))
+      (when (file-exists-p temp-mod) (delete-file temp-mod))
+      (when (buffer-live-p output-buffer) (kill-buffer output-buffer)))))
+
 (defun aidermacs--ediff-quit-handler ()
   "Handle ediff session cleanup and process next files in queue.
 This function is called when an ediff session is quit and processes
@@ -446,11 +575,13 @@ Returns a list of files that have been modified according to the output."
   "Window configuration before starting ediff sessions.")
 
 (defun aidermacs--process-next-ediff-file ()
-  "Process the next file in the ediff queue for the current buffer."
+  "Process the next file in the diff queue for the current buffer."
   (with-current-buffer (get-buffer (aidermacs-get-buffer-name))
     (if aidermacs--ediff-queue
         (let ((file (pop aidermacs--ediff-queue)))
-          (aidermacs--show-ediff-for-file file))
+          (if (eq aidermacs-diff-provider 'smerge)
+              (aidermacs--show-smerge-for-file file)
+            (aidermacs--show-ediff-for-file file)))
       (aidermacs--cleanup-temp-buffers)
       ;; Restore original window configuration
       (when aidermacs--pre-ediff-window-config
@@ -458,7 +589,7 @@ Returns a list of files that have been modified according to the output."
         (setq aidermacs--pre-ediff-window-config nil)))))
 
 (defun aidermacs--show-ediff-for-file (file)
-  "Uses the pre-edit buffer stored to compare with the current FILE state."
+  "Uses the pre-edit buffer stored to compare with the current FILE state using ediff."
   (let* ((full-path (expand-file-name file (aidermacs-project-root)))
          (pre-edit-pair (assoc full-path aidermacs--pre-edit-file-buffers))
          (pre-edit-buffer (and pre-edit-pair (cdr pre-edit-pair))))
@@ -475,13 +606,84 @@ Returns a list of files that have been modified according to the output."
       (message "No pre-edit buffer found for %s, skipping" file)
       (aidermacs--process-next-ediff-file))))
 
+(defun aidermacs--show-smerge-for-file (file)
+  "Uses smerge to show differences between original and modified FILE.
+Generates conflict markers for all changes, even those that could be automatically merged."
+  (let* ((full-path (expand-file-name file (aidermacs-project-root)))
+         (pre-edit-pair (assoc full-path aidermacs--pre-edit-file-buffers))
+         (pre-edit-buffer (and pre-edit-pair (cdr pre-edit-pair))))
+    (if (and pre-edit-buffer (buffer-live-p pre-edit-buffer))
+        (let ((current-buffer (or (get-file-buffer full-path)
+                                 (find-file-noselect full-path))))
+          ;; Switch to the buffer first to make it visible
+          (switch-to-buffer current-buffer)
+          (with-current-buffer current-buffer
+            ;; Get contents from both buffers
+            (let ((original-content (with-current-buffer pre-edit-buffer (buffer-string)))
+                  (modified-content (buffer-string))
+                  (inhibit-read-only t))
+              ;; Save the current point position
+              (let ((saved-point (point)))
+                ;; Generate merged content with conflict markers
+                (let ((merged-content (aidermacs--create-smerge-hunks 
+                                      original-content 
+                                      modified-content)))
+                  
+                  ;; Replace buffer content with the merged version
+                  (erase-buffer)
+                  (insert merged-content)
+                  
+                  ;; Activate smerge mode
+                  (goto-char (point-min))
+                  (smerge-mode 1)
+                  
+                  ;; If smerge found conflicts, proceed with refinement
+                  (if (save-excursion 
+                        (goto-char (point-min))
+                        (smerge-find-conflict))
+                      (progn
+                        ;; Try to ensure smerge finds the conflicts
+                        (smerge-start-session)
+                        
+                        ;; Refine conflicts to show word-level differences
+                        (save-excursion
+                          (goto-char (point-min))
+                          (condition-case nil
+                              (while (smerge-find-conflict)
+                                (smerge-refine)
+                                (condition-case nil
+                                    (smerge-next)
+                                  (user-error nil)))
+                            (user-error nil)))
+                        
+                        ;; Add key binding to continue to next file
+                        (let ((map (make-sparse-keymap)))
+                          (set-keymap-parent map (current-local-map))
+                          (define-key map (kbd "C-c C-n")
+                            (lambda () 
+                              (interactive)
+                              (when (y-or-n-p "Continue to next file? ")
+                                (aidermacs--process-next-ediff-file))))
+                          (use-local-map map)
+                          (message "Resolve conflicts with: C-c ^ n (next), C-c ^ p (prev), C-c ^ u/l (keep Upper/Lower). Press C-c C-n when done.")))
+                    ;; If no conflict markers found, notify user and continue
+                    (progn
+                      (smerge-mode -1)
+                      (message "No differences found for %s" file)
+                      (aidermacs--process-next-ediff-file))))
+                
+                ;; Restore point position (best effort)
+                (goto-char (min saved-point (point-max)))))))
+      ;; If no pre-edit buffer found, continue with next file
+      (message "No pre-edit buffer found for %s, skipping" file)
+      (aidermacs--process-next-ediff-file))))
+
 (defun aidermacs--show-ediff-for-edited-files (edited-files)
   "Show ediff for each file in EDITED-FILES.
 This is skipped if `aidermacs-show-diff-after-change' is nil."
   (when (and aidermacs-show-diff-after-change edited-files)
     ;; Save current window configuration
     (setq aidermacs--pre-ediff-window-config (current-window-configuration))
-
     ;; Display a message about which files were changed
     (message "Modified %d file(s): %s"
              (length edited-files)
