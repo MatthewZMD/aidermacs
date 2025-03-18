@@ -116,24 +116,32 @@ Kills all pre-edit buffers that were created to store original file content."
 Creates temporary buffers containing the original content of all tracked files.
 This is skipped if `aidermacs-show-diff-after-change' is nil."
   (when aidermacs-show-diff-after-change
-    (let ((files aidermacs--tracked-files))
-      (when files
-        (setq aidermacs--pre-edit-file-buffers
-              (cl-remove-duplicates
-               (mapcar (lambda (file)
-                         (let* ((clean-file (replace-regexp-in-string " (read-only)$" "" file))
-                                (full-path (expand-file-name clean-file (aidermacs-project-root))))
-                           ;; Only capture state if we don't already have it
-                           (or (assoc full-path aidermacs--pre-edit-file-buffers)
-                               (aidermacs--capture-file-state full-path))))
-                       files)
-               :test (lambda (a b) (equal (car a) (car b)))))
-        ;; Remove nil entries from the list (where capture failed or was skipped)
-        (setq aidermacs--pre-edit-file-buffers (delq nil aidermacs--pre-edit-file-buffers))
-        (message "Preparing code edit for %s: %s" files aidermacs--pre-edit-file-buffers)
-        ;; Run again if it's nil
-        (unless aidermacs--pre-edit-file-buffers
-          (aidermacs--prepare-for-code-edit))))))
+    (when-let* ((files aidermacs--tracked-files))
+      (let ((attempts 0)
+            (max-attempts 3))
+        ;; Use iteration rather than recursion with a limit on attempts
+        (while (and (zerop (length aidermacs--pre-edit-file-buffers))
+                    (< attempts max-attempts))
+          (setq aidermacs--pre-edit-file-buffers
+                (cl-remove-duplicates
+                 (delq nil
+                       (mapcar (lambda (file)
+                                 (let* ((clean-file (replace-regexp-in-string " (read-only)$" "" file))
+                                        (full-path (expand-file-name clean-file (aidermacs-project-root))))
+                                   ;; Only capture state if we don't already have it
+                                   (or (assoc full-path aidermacs--pre-edit-file-buffers)
+                                       (aidermacs--capture-file-state full-path))))
+                               files))
+                 :test (lambda (a b) (equal (car a) (car b)))))
+          (setq attempts (1+ attempts))
+          ;; Add a small delay before retry to allow for file system operations
+          (when (and (zerop (length aidermacs--pre-edit-file-buffers))
+                     (< attempts max-attempts))
+            (sit-for 0.1)))
+
+        (if (zerop (length aidermacs--pre-edit-file-buffers))
+            (message "Warning: Failed to capture file states after %d attempts" max-attempts)
+          (message "Prepared code edit for %d files" (length aidermacs--pre-edit-file-buffers)))))))
 
 (defun aidermacs--ediff-quit-handler ()
   "Handle ediff session cleanup and process next files in queue.
