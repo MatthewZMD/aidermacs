@@ -156,6 +156,21 @@ Use BUFFER if provided, otherwise retrieve it from `aidermacs-get-buffer-name'."
         (cancel-timer aidermacs--vterm-active-timer)
         (setq aidermacs--vterm-active-timer nil)))))
 
+
+(defun aidermacs--vterm-filter-buffer-substring (beg end &optional delete)
+  (let* ((text (cond
+                (delete
+                 (save-excursion
+                   (goto-char beg)
+                   (delete-and-extract-region beg end)))
+                (t
+                 (buffer-substring beg end))))
+         (space-fixed (replace-regexp-in-string "[ \t]{3,}" "\n" text))
+         (lines (split-string space-fixed "\n"))
+         (clean-lines (mapcar #'string-trim-right lines))
+         (fixed-text (string-join clean-lines "\n")))
+    fixed-text))
+
 (defcustom aidermacs-vterm-use-theme-colors t
   "Whether to use Emacs theme colors for aider.
 Has effect only when using the vterm backend."
@@ -324,7 +339,8 @@ _ARGS are the arguments."
 (define-minor-mode aidermacs-vterm-mode
   "Minor mode for vterm backend buffer used by aidermacs."
   :init-value nil
-  :keymap aidermacs-vterm-mode-map)
+  :keymap aidermacs-vterm-mode-map
+  (setq-local filter-buffer-substring-function 'aidermacs--vterm-filter-buffer-substring))
 
 (provide 'aidermacs-backend-vterm)
 ;;; aidermacs-backend-vterm.el ends here
