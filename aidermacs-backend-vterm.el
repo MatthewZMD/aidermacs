@@ -38,11 +38,12 @@
 (declare-function vterm-insert "vterm")
 (declare-function vterm-send-C-c "vterm")
 
-(declare-function aidermacs--prepare-for-code-edit "aidermacs-output")
 (declare-function aidermacs--detect-edited-files "aidermacs")
+(declare-function aidermacs--command-may-edit-files "aidermacs")
 (declare-function aidermacs--is-aidermacs-buffer-p "aidermacs")
 (declare-function aidermacs-get-buffer-name "aidermacs")
 (declare-function aidermacs--store-output "aidermacs-output")
+(declare-function aidermacs--prepare-for-code-edit "aidermacs-output")
 (declare-function aidermacs--parse-output-for-files "aidermacs-output" (output))
 (declare-function aidermacs--show-ediff-for-edited-files "aidermacs-output")
 (declare-function aidermacs--cleanup-temp-buffers "aidermacs-output")
@@ -155,6 +156,8 @@ Use BUFFER if provided, otherwise retrieve it from `aidermacs-get-buffer-name'."
 
 
 (defun aidermacs--vterm-filter-buffer-substring (beg end &optional delete)
+  "Filter text from BEG to END in vterm buffer for cleaner display.
+When DELETE is non-nil, extract and delete the region instead of copying it."
   (let* ((text (cond
                 (delete
                  (save-excursion
