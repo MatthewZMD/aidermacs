@@ -19,8 +19,6 @@
 ;; - Custom multi-line input keybindings
 ;; - Aider process management in VTerm
 
-;; Originally forked from: Kang Tu <tninja@gmail.com> Aider.el
-
 ;;; Code:
 
 (require 'vterm nil 'noerror)
@@ -40,15 +38,14 @@
 (declare-function vterm-insert "vterm")
 (declare-function vterm-send-C-c "vterm")
 
-(declare-function aidermacs--prepare-for-code-edit "aidermacs")
-(declare-function aidermacs--cleanup-temp-buffers "aidermacs")
-(declare-function aidermacs--show-ediff-for-edited-files "aidermacs")
+(declare-function aidermacs--prepare-for-code-edit "aidermacs-output")
 (declare-function aidermacs--detect-edited-files "aidermacs")
-(declare-function aidermacs--store-output "aidermacs")
 (declare-function aidermacs--is-aidermacs-buffer-p "aidermacs")
 (declare-function aidermacs-get-buffer-name "aidermacs")
-
-(declare-function aidermacs--parse-output-for-files "aidermacs-backends" (output))
+(declare-function aidermacs--store-output "aidermacs-output")
+(declare-function aidermacs--parse-output-for-files "aidermacs-output" (output))
+(declare-function aidermacs--show-ediff-for-edited-files "aidermacs-output")
+(declare-function aidermacs--cleanup-temp-buffers "aidermacs-output")
 
 (declare-function evil-define-minor-mode-key "evil-core")
 

@@ -28,14 +28,14 @@
 (require 'map)
 
 ;; Forward declarations
-(declare-function aidermacs--prepare-for-code-edit "aidermacs")
-(declare-function aidermacs--cleanup-temp-buffers "aidermacs")
-(declare-function aidermacs--show-ediff-for-edited-files "aidermacs")
-(declare-function aidermacs--detect-edited-files "aidermacs")
+(declare-function aidermacs--prepare-for-code-edit "aidermacs-output")
 (declare-function aidermacs--process-message-if-multi-line "aidermacs" (str))
-(declare-function aidermacs--parse-output-for-files "aidermacs-backends" (output))
-(declare-function aidermacs--store-output "aidermacs-backends" (output))
+(declare-function aidermacs--store-output "aidermacs-output" (output))
 (declare-function aidermacs--is-aidermacs-buffer-p "aidermacs-backends" (&optional buffer))
+(declare-function aidermacs--parse-output-for-files "aidermacs-output" (output))
+(declare-function aidermacs--show-ediff-for-edited-files "aidermacs-output")
+(declare-function aidermacs--cleanup-temp-buffers "aidermacs-output")
+(declare-function aidermacs--detect-edited-files "aidermacs-output")
 
 (defvar aidermacs--last-command)
 
