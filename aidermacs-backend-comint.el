@@ -29,10 +29,11 @@
 
 ;; Forward declarations
 (declare-function aidermacs--prepare-for-code-edit "aidermacs-output")
-(declare-function aidermacs--process-message-if-multi-line "aidermacs" (str))
-(declare-function aidermacs--store-output "aidermacs-output" (output))
-(declare-function aidermacs--is-aidermacs-buffer-p "aidermacs-backends" (&optional buffer))
-(declare-function aidermacs--parse-output-for-files "aidermacs-output" (output))
+(declare-function aidermacs--process-message-if-multi-line "aidermacs")
+(declare-function aidermacs--command-may-edit-files "aidermacs")
+(declare-function aidermacs--store-output "aidermacs-output")
+(declare-function aidermacs--is-aidermacs-buffer-p "aidermacs-backends")
+(declare-function aidermacs--parse-output-for-files "aidermacs-output")
 (declare-function aidermacs--show-ediff-for-edited-files "aidermacs-output")
 (declare-function aidermacs--cleanup-temp-buffers "aidermacs-output")
 (declare-function aidermacs--detect-edited-files "aidermacs-output")
@@ -288,8 +289,8 @@ PROC is the process to send to.  STRING is the command to send."
     (if (member (downcase string) '("" "y" "n" "d" "yes" "no"))
         (aidermacs--parse-output-for-files aidermacs--comint-output-temp)
       (setq aidermacs--last-command string)
-      ;; Always prepare for potential edits
-      (aidermacs--prepare-for-code-edit)))
+      (when (aidermacs--command-may-edit-files string)
+        (aidermacs--prepare-for-code-edit))))
   (comint-simple-send proc (aidermacs--process-message-if-multi-line string)))
 
 (defun aidermacs-run-comint (program args buffer-name)

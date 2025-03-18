@@ -123,7 +123,6 @@ This is skipped if `aidermacs-show-diff-after-change' is nil."
   (when aidermacs-show-diff-after-change
     (let ((files aidermacs--tracked-files))
       (when files
-        (message "Preparing code edit for %s" files)
         (setq aidermacs--pre-edit-file-buffers
               (cl-remove-duplicates
                (mapcar (lambda (file)
@@ -136,6 +135,7 @@ This is skipped if `aidermacs-show-diff-after-change' is nil."
                :test (lambda (a b) (equal (car a) (car b)))))
         ;; Remove nil entries from the list (where capture failed or was skipped)
         (setq aidermacs--pre-edit-file-buffers (delq nil aidermacs--pre-edit-file-buffers))
+        (message "Preparing code edit for %s: %s" files aidermacs--pre-edit-file-buffers)
         ;; Run again if it's nil
         (unless aidermacs--pre-edit-file-buffers
           (aidermacs--prepare-for-code-edit))))))
@@ -343,11 +343,24 @@ Returns a list of files that have been modified according to the output."
 
       ;; Filter the list to only include valid files
       (setq unique-files (delete-dups edited-files))
-      (setq valid-files (cl-remove-if-not
-                         (lambda (file)
-                           (file-exists-p (expand-file-name file project-root)))
-                         unique-files))
-      (nreverse valid-files))))
+      (setq valid-files (nreverse (cl-remove-if-not
+                                   (lambda (file)
+                                     (file-exists-p (expand-file-name file project-root)))
+                                   unique-files)))
+      ;; Display a message about which files were changed
+      (message "Modified file(s): %s" valid-files)
+      valid-files)))
+
+(defun aidermacs--show-ediff-for-edited-files (edited-files)
+  "Show ediff for each file in EDITED-FILES.
+This is skipped if `aidermacs-show-diff-after-change' is nil."
+  (when (and aidermacs-show-diff-after-change edited-files)
+    ;; Save current window configuration
+    (setq aidermacs--pre-ediff-window-config (current-window-configuration))
+    ;; Set up the queue in the current buffer
+    (setq-local aidermacs--ediff-queue edited-files)
+    ;; Process the first file
+    (aidermacs--process-next-ediff-file)))
 
 (defun aidermacs--process-next-ediff-file ()
   "Process the next file in the ediff queue for the current buffer."
@@ -378,24 +391,6 @@ Returns a list of files that have been modified according to the output."
       ;; If no pre-edit buffer found, continue with next file
       (message "No pre-edit buffer found for %s, skipping" file)
       (aidermacs--process-next-ediff-file))))
-
-(defun aidermacs--show-ediff-for-edited-files (edited-files)
-  "Show ediff for each file in EDITED-FILES.
-This is skipped if `aidermacs-show-diff-after-change' is nil."
-  (when (and aidermacs-show-diff-after-change edited-files)
-    ;; Save current window configuration
-    (setq aidermacs--pre-ediff-window-config (current-window-configuration))
-
-    ;; Display a message about which files were changed
-    (message "Modified %d file(s): %s"
-             (length edited-files)
-             (mapconcat #'identity edited-files ", "))
-
-    ;; Set up the queue in the current buffer
-    (setq-local aidermacs--ediff-queue edited-files)
-
-    ;; Process the first file
-    (aidermacs--process-next-ediff-file)))
 
 (provide 'aidermacs-output)
 ;;; aidermacs-output.el ends here

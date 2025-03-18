@@ -315,6 +315,17 @@ This is useful for working in monorepos where you want to limit aider's scope."
   (let ((aidermacs-subtree-only t))
     (aidermacs-run)))
 
+(defun aidermacs--command-may-edit-files (command)
+  "Check if COMMAND may result in file edits.
+Returns t if the command is likely to modify files, nil otherwise.
+In code/architect mode, commands without prefixes may edit.
+Commands containing /code or /architect always may edit."
+  (and (stringp command)
+       (or (and (memq aidermacs--current-mode '(code architect))
+                (not (string-match-p "^/" command)))
+           (string-match-p "/code" command)
+           (string-match-p "/architect" command))))
+
 (defun aidermacs--send-command (command &optional no-switch-to-buffer use-existing redirect callback)
   "Send command to the corresponding aidermacs process.
 COMMAND is the text to send.
@@ -327,16 +338,16 @@ If CALLBACK is non-nil it will be called after the command finishes."
                      (progn (aidermacs-run)
                             (get-buffer buffer-name))))
          (processed-command (aidermacs--process-message-if-multi-line command)))
-    ;; Reset current output before sending new command
+    ;; Check if command may edit files and prepare accordingly
     (with-current-buffer buffer
+      ;; Reset current output before sending new command
       (setq aidermacs--current-output "")
       (setq aidermacs--current-callback callback)
       (setq aidermacs--last-command processed-command)
-      ;; Always prepare for potential edits
       (aidermacs--cleanup-temp-buffers)
-      ;; Ensure current file is tracked before preparing for code edit
       (aidermacs--ensure-current-file-tracked)
-      (aidermacs--prepare-for-code-edit)
+      (when (aidermacs--command-may-edit-files command)
+        (aidermacs--prepare-for-code-edit))
       (aidermacs--send-command-backend buffer processed-command redirect))
     (when (and (not no-switch-to-buffer)
                (not (string= (buffer-name) buffer-name)))

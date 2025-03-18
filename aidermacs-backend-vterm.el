@@ -305,8 +305,8 @@ BUFFER is the target buffer to send to.  COMMAND is the text to send."
                        (line-end-position))))
         (when (not (string-empty-p command))
           (setq-local aidermacs--last-command command)
-          ;; Always prepare for potential edits
-          (aidermacs--prepare-for-code-edit))))))
+          (when (aidermacs--command-may-edit-files command)
+            (aidermacs--prepare-for-code-edit)))))))
 
 (defun aidermacs--vterm-cleanup ()
   "Clean up vterm resources when buffer is killed."
