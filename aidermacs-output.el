@@ -108,11 +108,6 @@ Kills all pre-edit buffers that were created to store original file content."
       (let ((temp-buffer (cdr file-pair)))
         (when (and temp-buffer (buffer-live-p temp-buffer))
           (kill-buffer temp-buffer))))
-    ;; Also clean up any stray pre-edit buffers that might have been missed
-    (dolist (buf (buffer-list))
-      (when (and (string-match " \\*aidermacs-pre-edit:" (buffer-name buf))
-                 (buffer-live-p buf))
-        (kill-buffer buf)))
     ;; Clear the list after cleanup
     (setq aidermacs--pre-edit-file-buffers nil)))
 
