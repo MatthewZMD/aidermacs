@@ -152,18 +152,21 @@ You can switch to it persistently by `M-x aidermacs-switch-to-architect-mode` (`
 
 You can configure each model independently:
 ```emacs-lisp
-;; Architect model for reasoning (defaults to aidermacs-default-model)
+;; Architect model for reasoning (initially defaults to aidermacs-default-model)
 (setq aidermacs-architect-model "sonnet")
 
-;; Editor model for code generation (defaults to aidermacs-default-model)
+;; Editor model for code generation (initially defaults to aidermacs-default-model)
 (setq aidermacs-editor-model "deepseek/deepseek-chat")
 ```
 
 The model hierarchy works as follows:
-- When Architect mode is enabled, `aidermacs-default-model` is ignored
-- The Architect model handles high-level reasoning and solution design
-- The Editor model executes the actual code changes
+- When Architect mode is enabled:
+    - The Architect model handles high-level reasoning and solution design
+    - The Editor model executes the actual code changes
+- When Architect mode is disabled, only `aidermacs-default-model` is used
 - You can configure both models independently or let them default to `aidermacs-default-model`
+
+*Note: The architect and editor models only inherit from `aidermacs-default-model` when first initialized. Changing `aidermacs-default-model` later will not update the other models. For consistent behavior, set each model explicitly.*
 
 *Note: These configurations will be overwritten by the existence of an `.aider.conf.yml` file (see [details](#Overwrite-Configuration-with-Configuration-File)).*
 
