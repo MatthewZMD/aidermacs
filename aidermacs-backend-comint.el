@@ -39,6 +39,7 @@
 (declare-function aidermacs--detect-edited-files "aidermacs-output")
 
 (defvar aidermacs--last-command)
+(defvar diff-update-on-the-fly)
 
 (defgroup aidermacs-backend-comint nil
   "Comint backend for Aidermacs."
@@ -193,7 +194,8 @@ _OUTPUT is the text to be processed."
             (with-current-buffer aidermacs--syntax-work-buffer
               (unless (eq mode major-mode)
                 (condition-case e
-                    (let ((inhibit-message t))
+                    (let ((inhibit-message t)
+                          (diff-update-on-the-fly nil))
                       (funcall mode))
                   (error "aidermacs: Failed to init major-mode `%s' for font-locking: %s" mode e))))))
 
