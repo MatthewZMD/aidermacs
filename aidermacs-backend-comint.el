@@ -239,14 +239,19 @@ _OUTPUT is the text to be processed."
 
       ;; Apply the faces to the buffer
       (remove-overlays aidermacs--syntax-block-start-pos aidermacs--syntax-block-end-pos)
-      (while (< pos aidermacs--syntax-block-end-pos)
-        (let* ((next-font-pos (or (next-property-change font-pos fontified) (length fontified)))
-               (next-pos (+ aidermacs--syntax-block-start-pos next-font-pos))
-               (face (get-text-property font-pos 'face fontified)))
-          (ansi-color-apply-overlay-face pos next-pos face)
-          (setq pos next-pos
-                font-pos next-font-pos))))
-
+      
+      (catch 'break
+        (while  (< pos aidermacs--syntax-block-end-pos)
+          (let* ((next-font-pos (or (next-property-change font-pos fontified) (length fontified)))
+                 (next-pos (+ aidermacs--syntax-block-start-pos next-font-pos))
+                 (face (get-text-property font-pos 'face fontified)))
+            (ansi-color-apply-overlay-face pos next-pos face)
+            (when (eq pos next-pos)
+              (throw 'break nil))
+            
+            (setq pos next-pos
+                  font-pos next-font-pos)))))
+             
     ;; If we found the end marker, finalize the block
     (when end-of-block-p
       (when (equal aidermacs--syntax-block-delimiter aidermacs-diff-marker)
