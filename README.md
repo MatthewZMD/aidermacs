@@ -445,6 +445,19 @@ Yes! Aidermacs supports any OpenAI-compatible API endpoint. Check Aider document
 ### Is my code sent to the AI provider?
 Yes, the code you add to the session is sent to the AI provider. Be mindful of sensitive code.
 
+### Why aider not support Python 3.13
+Aider only support Python 3.12 currently, you can use [uv](https://github.com/astral-sh/uv) install aider:
+
+```bash
+uv tool install --force --python python3.12 aider-chat@latest
+```
+
+And adjust aidermacs program with below config.
+
+```elisp
+(setq aidermacs-program (expand-file-name "~/.local/bin/aider"))
+```
+
 ## Video Demo
 
 [<img src="https://img.youtube.com/vi/fB3-ie6zs4Y/0.jpg" width=600>](https://www.youtube.com/watch?v=fB3-ie6zs4Y)
