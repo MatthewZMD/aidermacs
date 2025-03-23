@@ -297,8 +297,8 @@ This function sets up the appropriate arguments and launches the process."
             (append
              (if aidermacs-use-architect-mode
                  (list "--architect"
-                       "--model" aidermacs-architect-model
-                       "--editor-model" aidermacs-editor-model)
+                       "--model" (aidermacs-get-architect-model)
+                       "--editor-model" (aidermacs-get-editor-model))
                (unless has-model-arg
                  (list "--model" aidermacs-default-model)))
              (unless aidermacs-auto-commits

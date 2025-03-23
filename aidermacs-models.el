@@ -46,24 +46,38 @@
   "Default AI model to use for aidermacs sessions when not in Architect mode."
   :type 'string)
 
-(defcustom aidermacs-architect-model aidermacs-default-model
+(defcustom aidermacs-architect-model nil
   "Default reasoning AI model to use for architect mode.
-Defaults to `aidermacs-default-model' if not explicitly set."
-  :type 'string)
+If nil, uses the value of `aidermacs-default-model'."
+  :type '(choice (const :tag "Use default model" nil)
+                 (string :tag "Specific model")))
 
-(defcustom aidermacs-editor-model aidermacs-default-model
+(defcustom aidermacs-editor-model nil 
   "Default editing AI model to use for architect mode.
-Defaults to `aidermacs-default-model' if not explicitly set."
-  :type 'string)
+If nil, uses the value of `aidermacs-default-model'."
+  :type '(choice (const :tag "Use default model" nil)
+                 (string :tag "Specific model")))
 
 (defcustom aidermacs-weak-model nil
   "Default weak AI model to use.
-This is the model to use for commit messages and chat history summarization.
-When nil, Aider sets it automatically based on the default model."
-  :type 'string)
+If nil, uses a model automatically selected based on the default model."
+  :type '(choice (const :tag "Use default model" nil)
+                 (string :tag "Specific model")))
 
 (defvar aidermacs--cached-models nil
   "Cache of available AI models.")
+
+(defun aidermacs-get-architect-model ()
+  "Get the effective architect model, falling back to default if not set."
+  (or aidermacs-architect-model aidermacs-default-model))
+
+(defun aidermacs-get-editor-model ()
+  "Get the effective editor model, falling back to default if not set."
+  (or aidermacs-editor-model aidermacs-default-model))
+
+(defun aidermacs-get-weak-model ()
+  "Get the effective weak model, falling back to default if not set."
+  (or aidermacs-weak-model aidermacs-default-model))
 
 (defconst aidermacs--api-providers
   '(("https://openrouter.ai/api/v1" . ((hostname . "openrouter.ai")
@@ -158,8 +172,7 @@ API provider."
                   models))))))
 
 (defun aidermacs--select-model (&optional set-weak-model)
-  "Provide model selection with completion, handling main/weak/editor models.
-When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
+  "Provide model selection with completion, handling main/weak/editor models."
   (condition-case nil
       (let* ((aider-version (aidermacs-aider-version))
              (supports-specific-model (version<= "0.78.0" aider-version))
@@ -178,12 +191,19 @@ When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
         (when model
           (cond
            (set-weak-model
+            (setq aidermacs-weak-model model)
             (aidermacs--send-command (format "/weak-model %s" model)))
            ((and is-architect-mode supports-specific-model)
             (pcase model-type
-              ("Main/Reasoning Model" (aidermacs--send-command (format "/model %s" model)))
-              ("Editing Model" (aidermacs--send-command (format "/editor-model %s" model)))))
-           (t (aidermacs--send-command (format "/model %s" model))))))
+              ("Main/Reasoning Model" 
+               (setq aidermacs-architect-model model)
+               (aidermacs--send-command (format "/model %s" model)))
+              ("Editing Model"
+               (setq aidermacs-editor-model model)
+               (aidermacs--send-command (format "/editor-model %s" model)))))
+           (t 
+            (setq aidermacs-default-model model)
+            (aidermacs--send-command (format "/model %s" model))))))
     (quit (message "Model selection cancelled"))))
 
 (defun aidermacs--get-available-models ()
