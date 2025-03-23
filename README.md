@@ -450,6 +450,12 @@ Aider only support Python 3.12 currently, you can use [uv](https://github.com/as
 uv tool install --force --python python3.12 aider-chat@latest
 ```
 
+If you encounter a proxy-related [issue](https://github.com/Aider-AI/aider/issues/2984) , such as the error indicating that the 'socksio' package is not installed, please use:
+
+```bash
+uv tool install --force --python python3.12 aider-chat@latest --with 'httpx[socks]'
+```
+
 And adjust aidermacs program with below config.
 
 ```elisp
