@@ -233,26 +233,25 @@ _OUTPUT is the text to be processed."
       ;; Insert the new text and get the fontified result
       (with-current-buffer aidermacs--syntax-work-buffer
         (goto-char (point-max))
-        (insert new-content)
-        (with-demoted-errors "aidermacs block font lock error: %s"
+        (with-demoted-errors "aidermacs block font lock error: %S"
           (let ((inhibit-message t))
+            (insert new-content)
             (font-lock-ensure)))
         (setq fontified (buffer-string)))
 
       ;; Apply the faces to the buffer
       (remove-overlays aidermacs--syntax-block-start-pos aidermacs--syntax-block-end-pos)
 
-      (catch 'break
-        (while (< pos aidermacs--syntax-block-end-pos)
-          (let* ((next-font-pos (or (next-property-change font-pos fontified) (length fontified)))
-                 (next-pos (+ aidermacs--syntax-block-start-pos next-font-pos))
-                 (face (get-text-property font-pos 'face fontified)))
-            (ansi-color-apply-overlay-face pos next-pos face)
-            ;; Detect potential infinite loop - position didn't advance
-            (when (eq pos next-pos)
-              (warn "Font-lock position didn't advance at pos %d, breaking out of loop to prevent hang" pos)
-              (throw 'break nil))
-
+      (while (< pos aidermacs--syntax-block-end-pos)
+        (let* ((next-font-pos (or (next-property-change font-pos fontified) (length fontified)))
+               (next-pos (+ aidermacs--syntax-block-start-pos next-font-pos))
+               (face (get-text-property font-pos 'face fontified)))
+          (ansi-color-apply-overlay-face pos next-pos face)
+          ;; Detect potential infinite loop - position didn't advance
+          (if (eq pos next-pos)
+              (progn
+                (warn "aidermacs: Font-lock position didn't advance at pos %d" pos)
+                (setq pos aidermacs--syntax-block-end-pos))
             (setq pos next-pos
                   font-pos next-font-pos)))))
 
@@ -281,7 +280,7 @@ _OUTPUT is the text to be processed."
      (let ((file (match-string 1)))
        (cdr (cl-assoc-if (lambda (re) (string-match re file)) auto-mode-alist))))
    (progn
-     (message "aidermacs warning: can't detect major mode at %d" (point))
+     (message "aidermacs: can't detect major mode at %d" (point))
      'fundamental-mode)))
 
 (defun aidermacs--comint-cleanup-hook ()
