@@ -28,7 +28,7 @@ rendering engine, but its output is generally too large and unfiltered for
 direct use as LLM context.
 
 Install dependencies:
-pip install networkx pygments grep-ast diskcache tiktoken tqdm
+pip install networkx pygments grep-ast diskcache tiktoken tqdm gitignore_parser scipy
 """
 
 import argparse
@@ -323,10 +323,12 @@ class RepoMap:
         map_tokens=4096,
         verbose=False,
         tokenizer_name="cl100k_base",  # Default tokenizer for gpt-4, gpt-3.5
+        force_refresh=False,
     ):
         self.verbose = verbose
         self.root = os.path.abspath(root)
         self.max_map_tokens = map_tokens
+        self.force_refresh = force_refresh
 
         try:
             self.tokenizer = tiktoken.get_encoding(tokenizer_name)
@@ -487,8 +489,11 @@ class RepoMap:
              warnings.warn(f"Unexpected error reading from cache for {fname}: {e}")
              val = None # Treat as cache miss
 
-        # Check if cache hit is valid
-        if val is not None and isinstance(val, dict) and val.get("mtime") == file_mtime:
+        # Check if cache hit is valid and not forced to refresh
+        if (not self.force_refresh and
+            val is not None and
+            isinstance(val, dict) and
+            val.get("mtime") == file_mtime):
             try:
                 # Ensure data exists and is iterable
                 cached_data = val.get("data", [])
@@ -508,18 +513,24 @@ class RepoMap:
             print(f"Cache miss for {rel_fname}, generating tags...")
         data = list(self.get_tags_raw(fname, rel_fname))
 
-        # Update the cache
+        # Update the cache with both mtime and current time
         try:
-            self.TAGS_CACHE[cache_key] = {"mtime": file_mtime, "data": data}
+            cache_entry = {
+                "mtime": file_mtime,
+                "map_time": time.time(),
+                "data": data
+            }
+            self.TAGS_CACHE[cache_key] = cache_entry
             self.save_tags_cache()
+            if self.verbose:
+                print(f"Updated cache for {rel_fname} with mtime {file_mtime}")
         except SQLITE_ERRORS as e:
             self.tags_cache_error(e)
             # Try saving again if cache was reset to dict
             if isinstance(self.TAGS_CACHE, dict):
-                 self.TAGS_CACHE[cache_key] = {"mtime": file_mtime, "data": data}
+                 self.TAGS_CACHE[cache_key] = {"mtime": file_mtime, "map_time": time.time(), "data": data}
         except Exception as e:
             warnings.warn(f"Unexpected error writing to cache for {fname}: {e}")
-
 
         return data
 
@@ -1024,29 +1035,21 @@ class RepoMap:
 # --- Helper Functions (from aider/repomap.py) ---
 
 
-def find_src_files(directory):
-    """Finds all files in a directory recursively."""
-    if not os.path.isdir(directory):
-        if os.path.exists(directory):
-             return [directory]
-        else:
-             warnings.warn(f"Input path is not a directory or file: {directory}")
-             return []
+# Common binary/non-source file extensions to exclude
+BINARY_EXTS = {
+    # Images
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.ico', '.svg',
+    # Media
+    '.mp3', '.mp4', '.mov', '.avi', '.mkv', '.wav',
+    # Archives
+    '.zip', '.tar', '.gz', '.bz2', '.7z', '.rar',
+    # Documents
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+    # Other binaries
+    '.exe', '.dll', '.so', '.o', '.a', '.class', '.jar'
+}
 
 
-    src_files = []
-    print(f"Scanning directory: {directory}")
-    for root, dirs, files in os.walk(directory, topdown=True):
-        # Basic filtering: Skip common build/dependency/VCS directories
-        dirs[:] = [d for d in dirs if d not in ['.git', 'node_modules', 'vendor', 'build', 'dist', '__pycache__', '.venv', 'env']]
-
-        for file in files:
-            # Basic filtering: Skip common non-source file types if needed
-            # Example: if not file.endswith(('.log', '.tmp', '.bak')):
-            src_files.append(os.path.join(root, file))
-
-    print(f"Found {len(src_files)} potential source files.")
-    return src_files
 
 
 def get_scm_fname(lang):
@@ -1072,26 +1075,97 @@ def get_scm_fname(lang):
 
 
 class RepoMapper:
-    def __init__(self, root_dir, map_tokens=4096, tokenizer="cl100k_base", verbose=False):
+    def __init__(self, root_dir, map_tokens=4096, tokenizer="cl100k_base", verbose=False, force_refresh=False):
         self.root = os.path.abspath(root_dir)
         self.map_tokens = map_tokens
         self.tokenizer = tokenizer
         self.verbose = verbose
+        self.force_refresh = force_refresh
         self.repo_mapper = RepoMap(
             root=self.root,
             map_tokens=self.map_tokens,
             verbose=self.verbose,
             tokenizer_name=self.tokenizer,
+            force_refresh=self.force_refresh,
         )
+        # Initialize map generation timestamp
+        self.map_generation_time = time.time()
 
-    def generate_map(self, chat_files=None, mentioned_files=None, mentioned_idents=None):
-        """Generate repository map with optional context files/identifiers"""
+    def _is_gitignored(self, path):
+        """Check if path matches any .gitignore rules."""
+        try:
+            from gitignore_parser import parse_gitignore
+            gitignore_path = os.path.join(self.root, '.gitignore')
+            if os.path.exists(gitignore_path):
+                gitignore = parse_gitignore(gitignore_path)
+                return gitignore(path)
+        except ImportError:
+            if self.verbose:
+                print("Note: gitignore_parser not installed, .gitignore checking disabled")
+        return False
+
+    def _find_src_files(self, directory):
+        """Finds all files in a directory recursively, excluding binaries."""
+        if not os.path.isdir(directory):
+            if os.path.exists(directory):
+                if os.path.splitext(directory)[1].lower() in BINARY_EXTS:
+                    return []
+                return [directory]
+            warnings.warn(f"Input path is not a directory or file: {directory}")
+            return []
+
+        src_files = []
+        if self.verbose:
+            print(f"Scanning directory: {directory}")
+        for root, dirs, files in os.walk(directory, topdown=True):
+            # Filter directories
+            dirs[:] = [
+                d for d in dirs
+                if not (
+                    d.startswith('.') or  # hidden dirs
+                    d in {'node_modules', 'vendor', 'build', 'dist', '__pycache__', '.venv', 'env'}
+                )
+            ]
+
+            for file in files:
+                file_path = os.path.join(root, file)
+                ext = os.path.splitext(file)[1].lower()
+
+                if (
+                    ext in BINARY_EXTS or  # binary files
+                    file.startswith('.') or     # hidden files
+                    self._is_gitignored(file_path)  # gitignored files
+                ):
+                    continue
+
+                src_files.append(file_path)
+
+        if self.verbose:
+            print(f"Found {len(src_files)} potential source files.")
+        return src_files
+
+    def generate_map(self, chat_files=None, mentioned_files=None, mentioned_idents=None, force_refresh=None):
+        """Generate repository map with optional context files/identifiers
+
+        Args:
+            chat_files: List of files in chat context
+            mentioned_files: List of mentioned files
+            mentioned_idents: Set of mentioned identifiers
+            force_refresh: If True, ignores cache and regenerates all files
+        """
         if chat_files is None:
             chat_files = []
         if mentioned_files is None:
             mentioned_files = []
         if mentioned_idents is None:
             mentioned_idents = set()
+        if force_refresh is not None:
+            self.force_refresh = force_refresh
+
+        # Update map generation time
+        self.map_generation_time = time.time()
+        if self.verbose:
+            print(f"Map generation started at: {self.map_generation_time}")
 
         # Resolve paths relative to root
         def resolve_path(p):
@@ -1107,7 +1181,7 @@ class RepoMapper:
         mentioned_idents = set(mentioned_idents)
 
         # Find all files in repo
-        all_repo_files = find_src_files(self.root)
+        all_repo_files = self._find_src_files(self.root)
         if not all_repo_files:
             if self.verbose:
                 print(f"No source files found in directory: {self.root}")
@@ -1118,12 +1192,16 @@ class RepoMapper:
         other_files_abs = [f for f in all_repo_files if f not in chat_files_set]
 
         # Generate and return map content
-        return self.repo_mapper.get_repo_map(
+        map_content = self.repo_mapper.get_repo_map(
             chat_files=chat_files_abs,
             other_files=other_files_abs,
             mentioned_fnames=mentioned_files_abs,
             mentioned_idents=mentioned_idents,
         )
+
+        if self.verbose:
+            print(f"Map generation completed at: {time.time()}")
+        return map_content
 
     def render_cache(self):
         """Render all cached tags without ranking/selection"""
@@ -1187,6 +1265,11 @@ def main():
         description="Generate a repository map similar to Aider's repomap feature."
     )
     parser.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="Force regenerate all files, ignoring cache timestamps",
+    )
+    parser.add_argument(
         "--dir",
         required=True,
         help="The root directory of the repository/project to map.",
@@ -1241,7 +1324,8 @@ def main():
         root_dir=args.dir,
         map_tokens=args.map_tokens,
         tokenizer=args.tokenizer,
-        verbose=args.verbose
+        verbose=args.verbose,
+        force_refresh=args.force_refresh
     )
 
     if args.render_cache:
@@ -1277,6 +1361,7 @@ def main():
             print("--- End Repository Map ---")
     else:
         print("Failed to generate repository map.")
+
 
 
 if __name__ == "__main__":

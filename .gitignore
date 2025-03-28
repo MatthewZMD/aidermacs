@@ -6,3 +6,4 @@ __pycache__
 # ELPA-generated files.
 /aidermacs-pkg.el
 /aidermacs-autoloads.el
+/aider/

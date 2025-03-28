@@ -50,7 +50,7 @@ from datetime import datetime
 from pathlib import Path
 
 from prompt_templates import RepoPrompts
-from repomap import RepoMapper
+from repomapper import RepoMapper
 
 
 # --- Helper Functions (adapted from BaseCoder) ---
