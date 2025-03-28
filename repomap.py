@@ -1071,10 +1071,118 @@ def get_scm_fname(lang):
         return None
 
 
-# --- Main Execution ---
+class RepoMapper:
+    def __init__(self, root_dir, map_tokens=4096, tokenizer="cl100k_base", verbose=False):
+        self.root = os.path.abspath(root_dir)
+        self.map_tokens = map_tokens
+        self.tokenizer = tokenizer
+        self.verbose = verbose
+        self.repo_mapper = RepoMap(
+            root=self.root,
+            map_tokens=self.map_tokens,
+            verbose=self.verbose,
+            tokenizer_name=self.tokenizer,
+        )
+
+    def generate_map(self, chat_files=None, mentioned_files=None, mentioned_idents=None):
+        """Generate repository map with optional context files/identifiers"""
+        if chat_files is None:
+            chat_files = []
+        if mentioned_files is None:
+            mentioned_files = []
+        if mentioned_idents is None:
+            mentioned_idents = set()
+
+        # Resolve paths relative to root
+        def resolve_path(p):
+            abs_p = os.path.abspath(os.path.join(self.root, p))
+            if not os.path.exists(abs_p):
+                if self.verbose:
+                    warnings.warn(f"Context file not found: {p} (resolved to {abs_p})")
+                return None
+            return abs_p
+
+        chat_files_abs = [p for p in (resolve_path(f) for f in chat_files) if p]
+        mentioned_files_abs = [p for p in (resolve_path(f) for f in mentioned_files) if p]
+        mentioned_idents = set(mentioned_idents)
+
+        # Find all files in repo
+        all_repo_files = find_src_files(self.root)
+        if not all_repo_files:
+            if self.verbose:
+                print(f"No source files found in directory: {self.root}")
+            return ""
+
+        # Determine other_files by removing chat_files
+        chat_files_set = set(chat_files_abs)
+        other_files_abs = [f for f in all_repo_files if f not in chat_files_set]
+
+        # Generate and return map content
+        return self.repo_mapper.get_repo_map(
+            chat_files=chat_files_abs,
+            other_files=other_files_abs,
+            mentioned_fnames=mentioned_files_abs,
+            mentioned_idents=mentioned_idents,
+        )
+
+    def render_cache(self):
+        """Render all cached tags without ranking/selection"""
+        cache_path = Path(self.root) / TAGS_CACHE_DIR
+        if not cache_path.exists() or not cache_path.is_dir():
+            if self.verbose:
+                print(f"Error: Cache directory not found at {cache_path}")
+            return ""
+
+        try:
+            cache = Cache(cache_path)
+            if self.verbose:
+                print(f"Found {len(cache)} items in cache.")
+
+            all_tags = []
+            all_cached_fnames = set()
+
+            # Collect all tags and filenames from cache
+            for key in cache.iterkeys():
+                try:
+                    abs_fname = key
+                    if not os.path.exists(abs_fname) or os.path.isdir(abs_fname):
+                        continue
+
+                    all_cached_fnames.add(abs_fname)
+                    cached_item = cache.get(key)
+                    if cached_item and isinstance(cached_item, dict) and "data" in cached_item:
+                        all_tags.extend(cached_item.get("data", []))
+                except Exception as e:
+                    if self.verbose:
+                        print(f"Warning: Error processing cache key {key}: {e}")
+
+            # Create temporary RepoMap for rendering
+            temp_mapper = RepoMap(
+                root=self.root,
+                map_tokens=1_000_000,  # Large token limit for full cache dump
+                verbose=self.verbose,
+                tokenizer_name=self.tokenizer,
+            )
+
+            # Prepare items for rendering
+            tag_fnames = set(tag.rel_fname for tag in all_tags)
+            all_cached_rel_fnames = set(get_rel_fname(fname, self.root) for fname in all_cached_fnames)
+            files_only = all_cached_rel_fnames - tag_fnames
+
+            items_to_render = list(all_tags) + [(fname,) for fname in sorted(files_only)]
+            rendered_map = temp_mapper.to_tree(items_to_render, chat_rel_fnames=set())
+
+            cache.close()
+            return rendered_map
+
+        except Exception as e:
+            if self.verbose:
+                print(f"Error rendering cache: {e}")
+            return ""
 
 
 def main():
+    """Command line interface"""
     parser = argparse.ArgumentParser(
         description="Generate a repository map similar to Aider's repomap feature."
     )
@@ -1092,7 +1200,7 @@ def main():
     parser.add_argument(
         "--tokenizer",
         default="cl100k_base",
-        help="The name of the tiktoken tokenizer to use (e.g., 'cl100k_base', 'p50k_base').",
+        help="The name of the tiktoken tokenizer to use.",
     )
     parser.add_argument(
         "--verbose",
@@ -1101,167 +1209,71 @@ def main():
     )
     parser.add_argument(
         "--output",
-        help="Optional file path to write the map to (default: print to stdout).",
+        help="Optional file path to write the map to.",
     )
     parser.add_argument(
         "--render-cache",
         action="store_true",
-        help="Render all tags found in the cache using the map format, bypassing ranking/selection.",
+        help="Render all tags found in the cache.",
     )
     parser.add_argument(
         "--chat-files",
         nargs='*',
         default=[],
-        help="Files considered 'in the chat' for context personalization.",
+        help="Files considered 'in the chat' for context.",
     )
     parser.add_argument(
         "--mentioned-files",
         nargs='*',
         default=[],
-        help="Files explicitly mentioned for context personalization.",
+        help="Files explicitly mentioned for context.",
     )
     parser.add_argument(
         "--mentioned-idents",
         nargs='*',
         default=[],
-        help="Identifiers explicitly mentioned for context personalization.",
+        help="Identifiers explicitly mentioned for context.",
     )
-
 
     args = parser.parse_args()
 
-    repo_root = os.path.abspath(args.dir)
-    if not os.path.isdir(repo_root):
-        print(f"Error: Directory not found: {repo_root}")
-        sys.exit(1)
-
-    # Resolve context file paths relative to the root directory
-    def resolve_path(p):
-        abs_p = os.path.abspath(os.path.join(repo_root, p))
-        if not os.path.exists(abs_p):
-             warnings.warn(f"Context file/identifier not found: {p} (resolved to {abs_p})")
-             return None
-        return abs_p
-
-    chat_files_abs = [p for p in (resolve_path(f) for f in args.chat_files) if p]
-    mentioned_files_abs = [p for p in (resolve_path(f) for f in args.mentioned_files) if p]
-    mentioned_idents = set(args.mentioned_idents) # Identifiers don't need path resolution
-
-    # Find all potentially relevant files in the specified directory (excluding .git etc.)
-    all_repo_files = find_src_files(repo_root)
-    if not all_repo_files:
-        print(f"No source files found in directory: {repo_root}")
-        sys.exit(0)
-
-    # Determine 'other_files' by removing chat_files from all_repo_files
-    chat_files_set = set(chat_files_abs)
-    other_files_abs = [f for f in all_repo_files if f not in chat_files_set]
-
-    # Output the map
-    # --- Cache Rendering Logic ---
-    if args.render_cache:
-        cache_path = Path(repo_root) / TAGS_CACHE_DIR
-        if not cache_path.exists() or not cache_path.is_dir():
-            print(f"Error: Cache directory not found at {cache_path}")
-            sys.exit(1)
-
-        print(f"Dumping cache from: {cache_path}")
-        try:
-            cache = Cache(cache_path)
-            print(f"Found {len(cache)} items in cache.")
-
-            all_tags = []
-            all_cached_fnames = set()
-
-            # Iterate through cache to collect all tags and filenames
-            for key in cache.iterkeys():
-                try:
-                    # Assuming key is the absolute path
-                    abs_fname = key
-                    if not os.path.exists(abs_fname) or os.path.isdir(abs_fname):
-                        continue # Skip directories or non-existent files
-
-                    all_cached_fnames.add(abs_fname)
-                    cached_item = cache.get(key)
-                    if cached_item and isinstance(cached_item, dict) and "data" in cached_item:
-                        tags = cached_item.get("data", [])
-                        all_tags.extend(tags)
-                except Exception as e:
-                    print(f"Warning: Error processing cache key {key}: {e}")
-
-            # Instantiate RepoMap to use its rendering methods
-            # We don't need a real tokenizer or map_tokens limit for dumping
-            repo_mapper_for_dump = RepoMap(
-                root=repo_root,
-                map_tokens=1_000_000, # Effectively unlimited for dumping
-                verbose=args.verbose,
-                tokenizer_name=args.tokenizer, # Still needed for token_count if called
-            )
-
-            # Get relative filenames for all cached files
-            all_cached_rel_fnames = set(get_rel_fname(fname, repo_root) for fname in all_cached_fnames)
-
-            # Create items list: Tags first, then filenames not represented by tags
-            items_to_render = list(all_tags)
-            tag_fnames = set(tag.rel_fname for tag in all_tags)
-            files_only_to_add = all_cached_rel_fnames - tag_fnames
-            items_to_render.extend([(fname,) for fname in sorted(list(files_only_to_add))])
-
-            # Render the tree using all collected items, excluding none (empty chat set)
-            # Sort items: Special files (like README) might not be explicitly handled here
-            # as they are in the main map generation, but sorting helps consistency.
-            # A simple sort might mix Tags and tuples, handle this if needed.
-            # For now, just pass the combined list.
-            rendered_map = repo_mapper_for_dump.to_tree(items_to_render, chat_rel_fnames=set())
-
-            print("\n--- Rendered Cache Map ---")
-            print(rendered_map)
-            print("--- End Rendered Cache Map ---")
-
-            cache.close() # Good practice to close the cache
-
-        except SQLITE_ERRORS as e:
-            print(f"Error accessing cache database at {cache_path}: {e}")
-            sys.exit(1)
-        except Exception as e:
-            print(f"An unexpected error occurred while dumping the cache: {e}")
-            sys.exit(1)
-
-        sys.exit(0) # Exit after rendering cache
-
-
-    # Initialize RepoMap
-    repo_mapper = RepoMap(
-        root=repo_root,
+    mapper = RepoMapper(
+        root_dir=args.dir,
         map_tokens=args.map_tokens,
-        verbose=args.verbose,
-        tokenizer_name=args.tokenizer,
+        tokenizer=args.tokenizer,
+        verbose=args.verbose
     )
 
-    # Generate the map using context
-    repo_map_content = repo_mapper.get_repo_map(
-        chat_files=chat_files_abs,
-        other_files=other_files_abs,
-        mentioned_fnames=mentioned_files_abs,
-        mentioned_idents=mentioned_idents,
+    if args.render_cache:
+        content = mapper.render_cache()
+        if content:
+            print("\n--- Rendered Cache Map ---")
+            print(content)
+            print("--- End Rendered Cache Map ---")
+        else:
+            print("Failed to render cache.")
+        return
+
+    content = mapper.generate_map(
+        chat_files=args.chat_files,
+        mentioned_files=args.mentioned_files,
+        mentioned_idents=args.mentioned_idents
     )
 
-    # --- Map Generation Logic (if --render-cache is not used) ---
-    if repo_map_content:
+    if content:
         if args.output:
             try:
                 with open(args.output, "w", encoding="utf-8") as f:
-                    f.write(repo_map_content)
+                    f.write(content)
                 print(f"Repository map written to: {args.output}")
             except IOError as e:
-                print(f"Error writing map to file {args.output}: {e}")
-                # Fallback to printing if write fails
+                print(f"Error writing map: {e}")
                 print("\n--- Repository Map ---")
-                print(repo_map_content)
+                print(content)
                 print("--- End Repository Map ---")
         else:
             print("\n--- Repository Map ---")
-            print(repo_map_content)
+            print(content)
             print("--- End Repository Map ---")
     else:
         print("Failed to generate repository map.")
