@@ -165,28 +165,32 @@ def get_ident_mentions(text):
 # --- ChatChunks Class (Structure) ---
 
 class ChatChunks:
-    """Mimics Aider's ChatChunks class for structuring the prompt."""
+    """Structures the prompt with clear separation between examples and conversation"""
     def __init__(self):
-        self.system = []
-        self.examples = []
-        self.done = []
-        self.repo = []
-        self.readonly_files = []
-        self.chat_files = []
-        self.cur = []
-        self.reminder = []
+        self.system = []          # System instructions
+        self.examples = []        # Few-shot examples
+        self.context = []         # Conversation context (repo map, files)
+        self.current = []         # Current user message and response
 
     def all_messages(self):
-        """Combine all message chunks in Aider's preferred order"""
+        """Combine all message chunks with clear separation"""
         messages = []
         messages.extend(self.system)
-        messages.extend(self.examples)
-        messages.extend(self.done)
-        messages.extend(self.repo)
-        messages.extend(self.readonly_files)
-        messages.extend(self.chat_files)
-        messages.extend(self.cur)
-        messages.extend(self.reminder)
+
+        # Add few-shot examples with clear separator
+        if self.examples:
+            messages.extend(self.examples)
+            messages.append({
+                "role": "user",
+                "content": "Now working with a new code base. The examples above were just demonstrations."
+            })
+            messages.append({
+                "role": "assistant",
+                "content": "Understood, I'll focus on the actual files and requests."
+            })
+
+        messages.extend(self.context)
+        messages.extend(self.current)
         return messages
 
 def get_platform_info(repo=None):
@@ -381,22 +385,15 @@ def main():
     # BaseCoder structure: Use system role if model supports it (assume yes for standalone)
     chunks.system = [{"role": "system", "content": system_content}]
 
-    # --- Example Messages (Optional but good for mimicking) ---
-    # BaseCoder formats examples within the system prompt if model prefers,
-    # otherwise sends them as separate messages. We'll mimic the latter.
-    formatted_examples = []
+    # --- Few-Shot Examples ---
+    # Format the example conversations using the current fence style
+    chunks.examples = []
     for msg in prompts.example_messages:
-         # Re-format example content using the *current* system prompt context
-         # This isn't perfect but mimics the idea of formatting relative to the main prompt
-         example_content = msg["content"].format(fence=fence) # Basic formatting
-         formatted_examples.append({"role": msg["role"], "content": example_content})
-    chunks.examples = formatted_examples
-    # Add the "switched codebase" message if examples were added
-    if chunks.examples:
-        chunks.examples.extend([
-            {"role": "user", "content": "I switched to a new code base. Please don't consider the above files or try to edit them any longer."},
-            {"role": "assistant", "content": "Ok."}
-        ])
+        example_content = msg["content"].format(fence=fence)
+        chunks.examples.append({
+            "role": msg["role"],
+            "content": example_content
+        })
 
 
     # --- Repo Map ---
@@ -437,23 +434,47 @@ def main():
         has_repo_map=bool(repo_map_content)
     )
 
-    # --- Current User Message ---
-    chunks.cur = [{"role": "user", "content": args.user_message}]
+    # --- Current Conversation ---
+    chunks.context = []
 
-    # --- Reminder (Optional, add if needed based on token limits - simplified here) ---
-    # In a real scenario, token counting would determine if the reminder fits.
-    # We add it unconditionally here for structural similarity.
+    # Add repo map messages to context
+    repo_map_content = mapper.generate_map(
+        chat_files=args.chat_files,
+        mentioned_files=all_mentioned_files,
+        mentioned_idents=all_mentioned_idents
+    )
+    if repo_map_content:
+        chunks.context.extend(get_repo_map_messages(repo_map_content, prompts))
+
+    # Add read-only files to context
+    read_only_content = format_files_content(args.read_only_files, repo_root, fence)
+    if read_only_content:
+        chunks.context.extend(get_readonly_files_messages(read_only_content, prompts))
+
+    # Add chat files to context
+    chat_files_content = format_files_content(args.chat_files, repo_root, fence)
+    chunks.context.extend(get_chat_files_messages(
+        chat_files_content,
+        prompts,
+        has_repo_map=bool(repo_map_content)
+    ))
+
+    # Add current user message
+    chunks.current = [{"role": "user", "content": args.user_message}]
+
+    # Add system reminder if needed
     if prompts.system_reminder:
-         reminder_content = prompts.system_reminder.format(
-             fence=fence,
-             quad_backtick_reminder="", # Simplified
-             lazy_prompt=prompts.lazy_prompt,
-             shell_cmd_prompt=prompts.shell_cmd_prompt.format(platform=platform_text), # Reformat
-             shell_cmd_reminder=prompts.shell_cmd_reminder.format(platform=platform_text), # Reformat
-             platform=platform_text
-         )
-         # BaseCoder logic: Use system role for reminder
-         chunks.reminder = [{"role": "system", "content": reminder_content}]
+        chunks.current.append({
+            "role": "system",
+            "content": prompts.system_reminder.format(
+                fence=fence,
+                quad_backtick_reminder="",
+                lazy_prompt=prompts.lazy_prompt,
+                shell_cmd_prompt=prompts.shell_cmd_prompt.format(platform=platform_text),
+                shell_cmd_reminder=prompts.shell_cmd_reminder.format(platform=platform_text),
+                platform=platform_text
+            )
+        })
 
 
     # --- Output ---
