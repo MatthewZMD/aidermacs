@@ -38,7 +38,6 @@ Install dependencies:
 """
 
 import argparse
-import os
 import json
 import locale
 import os
@@ -50,10 +49,16 @@ from datetime import datetime
 from pathlib import Path
 
 from prompt_templates import RepoPrompts
+from pathlib import Path
+from typing import List, Dict, Tuple, Optional
+
+# Import the history parser function
+from history_parser import parse_history_markdown
+from prompt_templates import RepoPrompts
 from repomapper import RepoMapper
 
 
-# --- Helper Functions (adapted from BaseCoder) ---
+# --- Helper Functions ---
 
 def find_src_files(directory):
     """Finds potentially relevant files, mimicking part of RepoMap/BaseCoder logic."""
@@ -102,7 +107,7 @@ def get_all_relative_files(root_dir, chat_files, read_only_files):
     return sorted(list(existing_files))
 
 
-def get_addable_relative_files(root_dir, chat_files, read_only_files):
+def get_addable_relative_files(root_dir: str, chat_files: List[str], read_only_files: List[str]) -> List[str]:
     """Simulates BaseCoder's get_addable_relative_files."""
     all_files = set(get_all_relative_files(root_dir, chat_files, read_only_files))
     inchat_files = set(chat_files)
@@ -110,7 +115,7 @@ def get_addable_relative_files(root_dir, chat_files, read_only_files):
     return sorted(list(all_files - inchat_files - readonly_files))
 
 
-def get_file_mentions(content, root_dir, chat_files, read_only_files):
+def get_file_mentions(content: str, root_dir: str, chat_files: List[str], read_only_files: List[str]) -> List[str]:
     """Extracts potential file path mentions from text, adapted from BaseCoder."""
     words = set(word for word in content.split())
     words = set(word.rstrip(",.!;:?") for word in words) # Drop punctuation
@@ -154,7 +159,7 @@ def get_file_mentions(content, root_dir, chat_files, read_only_files):
     return list(mentioned_rel_fnames)
 
 
-def get_ident_mentions(text):
+def get_ident_mentions(text: str) -> List[str]:
     """Extracts potential identifiers (words) from text, adapted from BaseCoder."""
     # Split on non-alphanumeric characters
     words = set(re.split(r"\W+", text))
@@ -162,18 +167,19 @@ def get_ident_mentions(text):
     return [word for word in words if len(word) >= 3 and not word.isdigit()]
 
 
-# --- ChatChunks Class (Structure) ---
+# --- ChatChunks Class (Structure for organizing prompt parts) ---
 
 class ChatChunks:
-    """Structures the prompt with clear separation between examples and conversation"""
+    """Structures the prompt with clear separation between examples, history, and conversation"""
     def __init__(self):
         self.system = []          # System instructions
         self.examples = []        # Few-shot examples
-        self.context = []         # Conversation context (repo map, files)
+        self.history = []         # Parsed conversation history (Compromise: read from file)
+        self.context = []         # Context added *after* history (repo map, files)
         self.current = []         # Current user message and response
 
     def all_messages(self):
-        """Combine all message chunks with clear separation"""
+        """Combine all message chunks in the correct order"""
         messages = []
         messages.extend(self.system)
 
@@ -182,18 +188,29 @@ class ChatChunks:
             messages.extend(self.examples)
             messages.append({
                 "role": "user",
-                "content": "Now working with a new code base. The examples above were just demonstrations."
+                "content": "I switched to a new code base. Please don't consider the above files or try to edit them any longer."
             })
             messages.append({
                 "role": "assistant",
-                "content": "Understood, I'll focus on the actual files and requests."
+                "content": "Ok."
             })
 
+        # Add parsed history messages after examples, before current context
+        # NOTE: This loads the *entire* history file content. No summarization.
+        # This might exceed token limits for long-running chats.
+        messages.extend(self.history)
+
+        # Add current context (repo map, files) after history
         messages.extend(self.context)
+
+        # Add the current user message and final system reminder
         messages.extend(self.current)
         return messages
 
-def get_platform_info(repo=None):
+
+# --- Platform Info ---
+
+def get_platform_info(repo: bool = True) -> str:
     """Generate platform info matching Aider's format"""
     platform_text = f"- Platform: {platform.platform()}\n"
     shell_var = "COMSPEC" if os.name == "nt" else "SHELL"
@@ -216,7 +233,14 @@ def get_platform_info(repo=None):
     return platform_text
 
 
-def fmt_system_prompt(prompts, fence, platform_text, suggest_shell_commands=True):
+# --- System Prompt Formatting ---
+
+def fmt_system_prompt(
+    prompts: RepoPrompts,
+    fence: Tuple[str, str],
+    platform_text: str,
+    suggest_shell_commands: bool = True
+) -> str:
     """Format system prompt using RepoPrompts templates."""
     lazy_prompt = prompts.lazy_prompt # Assuming lazy model is not configurable here
     language = "the same language they are using" # Default language behavior
@@ -259,9 +283,9 @@ def fmt_system_prompt(prompts, fence, platform_text, suggest_shell_commands=True
     return system_content
 
 
-# --- Message Formatting Functions ---
+# --- Message Formatting Helpers ---
 
-def get_repo_map_messages(repo_content, prompts):
+def get_repo_map_messages(repo_content: str, prompts: RepoPrompts) -> List[Dict]:
     """Generate repo map messages using RepoPrompts."""
     if not repo_content:
         return []
@@ -273,7 +297,8 @@ def get_repo_map_messages(repo_content, prompts):
         dict(role="assistant", content="Ok, I won't try and edit those files without asking first.")
     ]
 
-def get_readonly_files_messages(content, prompts):
+
+def get_readonly_files_messages(content: str, prompts: RepoPrompts) -> List[Dict]:
     """Generate read-only files messages using RepoPrompts."""
     if not content:
         return []
@@ -284,7 +309,8 @@ def get_readonly_files_messages(content, prompts):
         dict(role="assistant", content="Ok, I will use these files as references.")
     ]
 
-def get_chat_files_messages(content, prompts, has_repo_map=False):
+
+def get_chat_files_messages(content: str, prompts: RepoPrompts, has_repo_map: bool = False) -> List[Dict]:
     """Generate chat files messages using RepoPrompts."""
     if not content:
         if has_repo_map and prompts.files_no_full_files_with_repo_map:
@@ -304,11 +330,8 @@ def get_chat_files_messages(content, prompts, has_repo_map=False):
     ]
 
 
-# --- Script Execution ---
-
-
-
-def format_files_content(files, directory, fence):
+# --- File Content Formatting ---
+def format_files_content(files: List[str], directory: str, fence: Tuple[str, str]) -> str:
     """Format file contents with their relative paths."""
     if not files:
         return ""
@@ -338,17 +361,168 @@ def format_files_content(files, directory, fence):
     return result + "\n" if result else ""
 
 
-# --- Main Execution Logic ---
+# --- PromptBuilder Class ---
+
+class PromptBuilder:
+    """Builds prompts using Aider's formulation."""
+
+    def __init__(
+        self,
+        root_dir: str,
+        map_tokens: int = 4096,
+        tokenizer: str = "cl100k_base",
+        chat_files: Optional[List[str]] = None,
+        read_only_files: Optional[List[str]] = None,
+        user_message: str = "",
+        extra_mentioned_files: Optional[List[str]] = None,
+        extra_mentioned_idents: Optional[List[str]] = None,
+        verbose: bool = False,
+        no_shell: bool = False,
+        fence_open: str = "```",
+        fence_close: str = "```",
+        history_file: Optional[str] = None, # Add history file path
+    ):
+        self.root_dir = os.path.abspath(root_dir)
+        self.map_tokens = map_tokens
+        self.tokenizer = tokenizer
+        self.chat_files = chat_files or []
+        self.read_only_files = read_only_files or []
+        self.user_message = user_message
+        self.extra_mentioned_files = extra_mentioned_files or []
+        self.extra_mentioned_idents = extra_mentioned_idents or []
+        self.verbose = verbose
+        self.no_shell = no_shell
+        self.fence = (fence_open, fence_close)
+        self.history_file = history_file # Store history file path
+
+        # Initialize RepoPrompts from the external file
+        self.prompts = RepoPrompts()
+        # Attach chat_files to prompts object like BaseCoder does for repo_content_prefix formatting
+        self.prompts.chat_files = self.chat_files
+
+        # Initialize RepoMapper
+        self.mapper = RepoMapper(
+            root_dir=self.root_dir,
+            map_tokens=self.map_tokens,
+            tokenizer=self.tokenizer,
+            verbose=self.verbose
+        )
+
+    def build_prompt_messages(self) -> List[Dict]:
+        """Constructs the final list of messages for the LLM."""
+        chunks = ChatChunks()
+
+        # --- System Prompt ---
+        platform_text = get_platform_info(repo=True) # Assume repo context
+        system_content = fmt_system_prompt(
+            self.prompts,
+            fence=self.fence,
+            platform_text=platform_text,
+            suggest_shell_commands=not self.no_shell
+        )
+        chunks.system = [{"role": "system", "content": system_content}]
+
+        # --- Few-Shot Examples ---
+        chunks.examples = []
+        for msg in self.prompts.example_messages:
+            example_content = msg["content"].format(fence=self.fence)
+            chunks.examples.append({
+                "role": msg["role"],
+                "content": example_content
+            })
+
+        # --- Load History (Compromise: Read from file) ---
+        # NOTE: Reads the entire history file, no summarization. May exceed token limits.
+        chunks.history = parse_history_markdown(self.history_file)
+        if self.verbose and chunks.history:
+            print(f"Loaded {len(chunks.history)} messages from history file: {self.history_file}", file=sys.stderr)
+        elif self.verbose:
+            print(f"No history loaded from: {self.history_file}", file=sys.stderr)
+
+
+        # --- Context Building (Repo Map, Files) ---
+        # This context is added *after* the history messages
+        chunks.context = []
+
+        # Extract mentions from the user message
+        mentioned_files_from_msg = get_file_mentions(
+            self.user_message, self.root_dir, self.chat_files, self.read_only_files
+        )
+        mentioned_idents_from_msg = get_ident_mentions(self.user_message)
+
+        # Combine explicit args with extracted mentions
+        all_mentioned_files = sorted(list(set(self.extra_mentioned_files + mentioned_files_from_msg)))
+        all_mentioned_idents = sorted(list(set(self.extra_mentioned_idents + mentioned_idents_from_msg)))
+
+        if self.verbose:
+            print(f"Mentioned files for map: {all_mentioned_files}")
+            print(f"Mentioned idents for map: {all_mentioned_idents}")
+
+        # Generate Repo Map
+        repo_map_content = self.mapper.generate_map(
+            chat_files=self.chat_files,
+            mentioned_files=all_mentioned_files,
+            mentioned_idents=all_mentioned_idents
+        )
+        if repo_map_content:
+            chunks.context.extend(get_repo_map_messages(repo_map_content, self.prompts))
+
+        # Add Read-Only Files
+        read_only_content = format_files_content(self.read_only_files, self.root_dir, self.fence)
+        if read_only_content:
+            chunks.context.extend(get_readonly_files_messages(read_only_content, self.prompts))
+
+        # Add Chat Files
+        chat_files_content = format_files_content(self.chat_files, self.root_dir, self.fence)
+        chunks.context.extend(get_chat_files_messages(
+            chat_files_content,
+            self.prompts,
+            has_repo_map=bool(repo_map_content)
+        ))
+
+        # --- Current User Message ---
+        chunks.current = [{"role": "user", "content": self.user_message}]
+
+        # Add system reminder if needed (placed after user message in Aider)
+        if self.prompts.system_reminder:
+            # Re-fetch platform info if needed by reminder template
+            platform_text_for_reminder = get_platform_info(repo=True)
+            shell_cmd_prompt_text = self.prompts.shell_cmd_prompt.format(platform=platform_text_for_reminder)
+            shell_cmd_reminder_text = self.prompts.shell_cmd_reminder.format(platform=platform_text_for_reminder)
+            no_shell_cmd_prompt_text = self.prompts.no_shell_cmd_prompt.format(platform=platform_text_for_reminder)
+            no_shell_cmd_reminder_text = self.prompts.no_shell_cmd_reminder.format(platform=platform_text_for_reminder)
+
+            current_shell_prompt = shell_cmd_prompt_text if not self.no_shell else no_shell_cmd_prompt_text
+            current_shell_reminder = shell_cmd_reminder_text if not self.no_shell else no_shell_cmd_reminder_text
+
+            chunks.current.append({
+                "role": "system",
+                "content": self.prompts.system_reminder.format(
+                    fence=self.fence,
+                    quad_backtick_reminder="", # Assuming no quad backticks for now
+                    lazy_prompt=self.prompts.lazy_prompt,
+                    shell_cmd_prompt=current_shell_prompt,
+                    shell_cmd_reminder=current_shell_reminder,
+                    platform=platform_text_for_reminder # Pass platform text if needed
+                )
+            })
+
+        # Combine all chunks
+        return chunks.all_messages()
+
+
+# --- CLI Execution Logic ---
 
 def main():
+    """Handles command-line argument parsing and execution."""
     parser = argparse.ArgumentParser(
-        description="Build prompts mimicking Aider's formulation."
+        description="Build prompts mimicking Aider's formulation. Outputs JSON message list."
     )
     parser.add_argument("--dir", required=True, help="Root directory of the project")
-    parser.add_argument("--map-script", default="repomap.py", help="Path to the repomap.py script")
+    # map-script is no longer needed as RepoMapper is imported
     parser.add_argument("--map-tokens", type=int, default=4096, help="Max tokens for repo map")
-    parser.add_argument("--tokenizer", default="cl100k_base", help="Tokenizer name for repomap.py")
-    parser.add_argument("--chat-files", nargs='*', default=[], help="Relative paths of files in the chat")
+    parser.add_argument("--tokenizer", default="cl100k_base", help="Tokenizer name for repo map")
+    parser.add_argument("--chat-files", nargs='*', default=[], help="Relative paths of files in the chat context")
     parser.add_argument("--read-only-files", nargs='*', default=[], help="Relative paths of read-only files")
     # Allow overriding mentioned files/idents, but also extract from message
     parser.add_argument("--extra-mentioned-files", nargs='*', default=[], help="Manually specify additional mentioned files")
@@ -360,125 +534,33 @@ def main():
     # Add fence argument if needed, otherwise default
     parser.add_argument("--fence-open", default="```", help="Opening fence for code blocks")
     parser.add_argument("--fence-close", default="```", help="Closing fence for code blocks")
+    # Add argument for history file path
+    parser.add_argument("--history-file", default=".aidermacs_history.md", help="Path to the chat history markdown file.")
 
 
     args = parser.parse_args()
-    repo_root = os.path.abspath(args.dir)
-    fence = (args.fence_open, args.fence_close)
 
-    # Initialize RepoPrompts from the external file
-    prompts = RepoPrompts()
-    # Attach chat_files to prompts object like BaseCoder does for repo_content_prefix formatting
-    prompts.chat_files = args.chat_files
-
-    # Initialize ChatChunks
-    chunks = ChatChunks()
-
-    # --- System Prompt ---
-    platform_text = get_platform_info(repo=True) # Assume repo context for platform info
-    system_content = fmt_system_prompt(
-        prompts,
-        fence=fence,
-        platform_text=platform_text,
-        suggest_shell_commands=not args.no_shell
-    )
-    # BaseCoder structure: Use system role if model supports it (assume yes for standalone)
-    chunks.system = [{"role": "system", "content": system_content}]
-
-    # --- Few-Shot Examples ---
-    # Format the example conversations using the current fence style
-    chunks.examples = []
-    for msg in prompts.example_messages:
-        example_content = msg["content"].format(fence=fence)
-        chunks.examples.append({
-            "role": msg["role"],
-            "content": example_content
-        })
-
-
-    # --- Repo Map ---
-    # Extract mentions from the user message
-    mentioned_files_from_msg = get_file_mentions(args.user_message, repo_root, args.chat_files, args.read_only_files)
-    mentioned_idents_from_msg = get_ident_mentions(args.user_message)
-
-    # Combine explicit args with extracted mentions
-    all_mentioned_files = sorted(list(set(args.extra_mentioned_files + mentioned_files_from_msg)))
-    all_mentioned_idents = sorted(list(set(args.extra_mentioned_idents + mentioned_idents_from_msg)))
-
-    if args.verbose:
-        print(f"Mentioned files for map: {all_mentioned_files}")
-        print(f"Mentioned idents for map: {all_mentioned_idents}")
-
-    mapper = RepoMapper(
-        root_dir=repo_root,
+    # Instantiate the builder with CLI arguments
+    builder = PromptBuilder(
+        root_dir=args.dir,
         map_tokens=args.map_tokens,
         tokenizer=args.tokenizer,
-        verbose=args.verbose
-    )
-    repo_map_content = mapper.generate_map(
         chat_files=args.chat_files,
-        mentioned_files=all_mentioned_files,
-        mentioned_idents=all_mentioned_idents
-    )
-    chunks.repo = get_repo_map_messages(repo_map_content, prompts)
-
-    # --- Read-Only Files ---
-    read_only_content = format_files_content(args.read_only_files, repo_root, fence)
-    chunks.readonly_files = get_readonly_files_messages(read_only_content, prompts)
-
-    # --- Chat Files ---
-    chat_files_content = format_files_content(args.chat_files, repo_root, fence)
-    chunks.chat_files = get_chat_files_messages(
-        chat_files_content,
-        prompts,
-        has_repo_map=bool(repo_map_content)
+        read_only_files=args.read_only_files,
+        user_message=args.user_message,
+        extra_mentioned_files=args.extra_mentioned_files,
+        extra_mentioned_idents=args.extra_mentioned_idents,
+        verbose=args.verbose,
+        no_shell=args.no_shell,
+        fence_open=args.fence_open,
+        fence_close=args.fence_close,
+        history_file=args.history_file, # Pass history file path
     )
 
-    # --- Current Conversation ---
-    chunks.context = []
+    # Generate the messages
+    final_prompt_messages = builder.build_prompt_messages()
 
-    # Add repo map messages to context
-    repo_map_content = mapper.generate_map(
-        chat_files=args.chat_files,
-        mentioned_files=all_mentioned_files,
-        mentioned_idents=all_mentioned_idents
-    )
-    if repo_map_content:
-        chunks.context.extend(get_repo_map_messages(repo_map_content, prompts))
-
-    # Add read-only files to context
-    read_only_content = format_files_content(args.read_only_files, repo_root, fence)
-    if read_only_content:
-        chunks.context.extend(get_readonly_files_messages(read_only_content, prompts))
-
-    # Add chat files to context
-    chat_files_content = format_files_content(args.chat_files, repo_root, fence)
-    chunks.context.extend(get_chat_files_messages(
-        chat_files_content,
-        prompts,
-        has_repo_map=bool(repo_map_content)
-    ))
-
-    # Add current user message
-    chunks.current = [{"role": "user", "content": args.user_message}]
-
-    # Add system reminder if needed
-    if prompts.system_reminder:
-        chunks.current.append({
-            "role": "system",
-            "content": prompts.system_reminder.format(
-                fence=fence,
-                quad_backtick_reminder="",
-                lazy_prompt=prompts.lazy_prompt,
-                shell_cmd_prompt=prompts.shell_cmd_prompt.format(platform=platform_text),
-                shell_cmd_reminder=prompts.shell_cmd_reminder.format(platform=platform_text),
-                platform=platform_text
-            )
-        })
-
-
-    # --- Output ---
-    final_prompt_messages = chunks.all_messages()
+    # Output the JSON result
     output_json = json.dumps(final_prompt_messages, indent=2)
 
 

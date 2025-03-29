@@ -37,7 +37,7 @@ Don't include files that might contain relevant context, just files that will ne
         " stop and wait for your approval."
     )
 
-    repo_content_prefix = """Here are summaries of some files present in my git repository.
+    repo_content_prefix = """Here are summaries of some files present in my project.
 Do not propose changes to these files, treat them as *read-only*.
 If you need to edit any of these files, ask me to *add them to the chat* first.
 """
@@ -231,6 +231,11 @@ The user will say when they've applied your edits. If they haven't explicitly co
 {lazy_prompt}
 ONLY EVER RETURN CODE IN A *SEARCH/REPLACE BLOCK*!
 {shell_cmd_reminder}
+"""
+
+    no_shell_cmd_reminder = """
+Keep in mind these details about the user's platform and environment:
+{platform}
 """
 
     shell_cmd_reminder = """

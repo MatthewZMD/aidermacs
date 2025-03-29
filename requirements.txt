@@ -1,0 +1,9 @@
+networkx
+pygments
+grep-ast
+diskcache
+tiktoken
+tqdm
+gitignore_parser
+scipy
+litellm

@@ -70,7 +70,7 @@ Tag = namedtuple("Tag", "rel_fname fname line name kind".split())
 SQLITE_ERRORS = (sqlite3.OperationalError, sqlite3.DatabaseError, OSError)
 
 # Define a fixed cache directory name for this standalone script
-TAGS_CACHE_DIR = ".aideremacs_repomap"
+TAGS_CACHE_DIR = ".aidermacs_repomap"
 
 # --- File Reading Utility ---
 
