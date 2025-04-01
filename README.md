@@ -58,7 +58,28 @@ Here's what the community is saying about Aidermacs:
   (aidermacs-use-architect-mode t)
   (aidermacs-default-model "sonnet"))
 ```
-3. Open a project and run `M-x aidermacs-transient-menu` or `C-c a` (where you bind it)
+
+### Spacemacs
+
+For **Spacemacs** users:
+
+1. Add `aidermacs` to your `dotspacemacs-additional-packages` list in your `.spacemacs` file:
+```emacs-lisp
+dotspacemacs-additional-packages '(
+  (aidermacs :variables
+              aidermacs-use-architect-mode t
+              aidermacs-default-model "sonnet")
+)
+```
+
+2. Add the keybinding to your `dotspacemacs/user-config` function in `.spacemacs`:
+```emacs-lisp
+(defun dotspacemacs/user-config ()
+  ;; Set leader key for Aidermacs
+  (spacemacs/set-leader-keys "aa" 'aidermacs-transient-menu) ; Example binding SPC a a
+)
+```
+3. Open a project and run `M-x aidermacs-transient-menu` or `SPC a a` (or your chosen binding).
 4. Add files and start coding with AI!
 
 ## Usage
