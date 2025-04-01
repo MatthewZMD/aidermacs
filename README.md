@@ -44,7 +44,7 @@ Here's what the community is saying about Aidermacs:
 - [Aider](https://aider.chat/docs/install.html)
 - [Transient](https://github.com/magit/transient)
 2. Download Aidermacs through [Melpa](https://melpa.org/#/aidermacs) or [Non-GNU Elpa](https://elpa.nongnu.org/nongnu/aidermacs.html), or clone manually
-2. Modify this **sample config** and place it in your Emacs `init.el`:
+3. Modify this **sample config** and place it in your Emacs `init.el`:
 ```emacs-lisp
 (use-package aidermacs
   :bind (("C-c a" . aidermacs-transient-menu))
@@ -58,6 +58,8 @@ Here's what the community is saying about Aidermacs:
   (aidermacs-use-architect-mode t)
   (aidermacs-default-model "sonnet"))
 ```
+4. Open a project and run `M-x aidermacs-transient-menu` or `SPC a a` (or your chosen binding).
+5. Add files and start coding with AI!
 
 ### Spacemacs
 
