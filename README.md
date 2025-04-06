@@ -374,12 +374,10 @@ Enable watching for AI coding instructions in your repository files with `aiderm
 
 When enabled, Aidermacs will will watch all files in your repo and look for any AI coding instructions you add using your favorite IDE or text editor.
 
-Specifically, aider looks for one-liner comments (`# ...` or `// ...`) that either start or end with `AI`, `AI!` or `AI?` like these:
+Specifically, aider looks for one-liner comments (`# ...`, `// ...` or `-- ...`, regardless of the comment style that language supports) that either start or end with `AI`, `AI!` or `AI?` like these:
 ```
 # Make a snake game. AI!
 # What is the purpose of this method AI?
-
-Or in // comment languages…
 
 // Write a protein folding prediction engine. AI!
 ```
