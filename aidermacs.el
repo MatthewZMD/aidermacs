@@ -597,8 +597,12 @@ Use highlighted region as context unless IGNORE-CONTEXT is set to non-nil."
     ;; Add to history if not already there, removing any duplicates
     (setq aidermacs--read-string-history
           (delete-dups (cons user-command aidermacs--read-string-history)))
-    (concat command (and (not (string-empty-p user-command))
-                         (concat " " prompt-prefix context ": " user-command)))))
+    (concat command
+            " "
+            prompt-prefix
+            context
+            (unless (string-empty-p user-command)
+                (concat ": " user-command)))))
 
 (defun aidermacs-direct-change ()
   "Prompt the user for an input and send it to aidemracs prefixed with \"/code \"."
