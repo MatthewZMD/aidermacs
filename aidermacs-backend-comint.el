@@ -250,7 +250,8 @@ _OUTPUT is the text to be processed."
           ;; Detect potential infinite loop - position didn't advance
           (if (eq pos next-pos)
               (progn
-                (warn "aidermacs: Font-lock position didn't advance at pos %d" pos)
+                (display-warning 'aidermacs
+				 (format "aidermacs: Font-lock position didn't advance at pos %d" pos))
                 (setq pos aidermacs--syntax-block-end-pos))
             (setq pos next-pos
                   font-pos next-font-pos)))))
