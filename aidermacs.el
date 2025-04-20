@@ -605,7 +605,7 @@ Use highlighted region as context unless IGNORE-CONTEXT is set to non-nil."
                 (concat ": " user-command)))))
 
 (defun aidermacs-direct-change ()
-  "Prompt the user for an input and send it to aidemracs prefixed with \"/code \"."
+  "Prompt the user for an input and send it to aidermacs prefixed with \"/code \"."
   (interactive)
   (when-let* ((command (aidermacs--form-prompt "/code" "Make this change" "will edit file")))
     (aidermacs--ensure-current-file-tracked)
@@ -643,13 +643,13 @@ If point is in a function, inspect that function."
     (aidermacs--send-command command)))
 
 (defun aidermacs-debug-exception ()
-  "Prompt the user for an input and send it to aidemracs prefixed with \"/debug \"."
+  "Prompt the user for an input and send it to aidermacs prefixed with \"/debug \"."
   (interactive)
   (when-let* ((command (aidermacs--form-prompt "/ask" "Debug exception")))
     (aidermacs--send-command command)))
 
 (defun aidermacs-accept-change ()
-  "Send the command \"go ahead\" to the aidemracs."
+  "Send the command \"go ahead\" to the aidermacs."
   (interactive)
   (aidermacs--send-command "/code ok"))
 
