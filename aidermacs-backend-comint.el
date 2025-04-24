@@ -26,6 +26,7 @@
 (require 'comint)
 (require 'cl-lib)
 (require 'map)
+(require 'markdown-mode)
 
 ;; Forward declarations
 (declare-function aidermacs--prepare-for-code-edit "aidermacs-output")
@@ -84,10 +85,8 @@ This allows for multi-line input without sending the command."
 (defvar aidermacs-font-lock-keywords
   '(("^\x2500+\n?" 0 '(face aidermacs-command-separator) t)
     ("^\x2500+" 0 '(face nil display (space :width 2)))
-    ("^\\([0-9]+\\). " 0 font-lock-constant-face)
     ("^>>>>>>> REPLACE" 0 'aidermacs-search-replace-block t)
     ("^<<<<<<< SEARCH" 0 'aidermacs-search-replace-block t)
-    ("^[:space:]*\\(```\\)\\([^[:space:]]*\\)" (1 'shadow t) (2 font-lock-builtin-face t))
     ("^=======$" 0 'aidermacs-search-replace-block t))
   "Font lock keywords for aidermacs buffer.")
 
@@ -311,16 +310,9 @@ BUFFER-NAME is the name for the aidermacs buffer."
     (unless (comint-check-proc buffer-name)
       (apply #'make-comint-in-buffer "aidermacs" buffer-name program nil args)
       (with-current-buffer buffer-name
-        (comint-mode)
-        (setq-local comint-prompt-regexp aidermacs-prompt-regexp)
-        (setq-local comint-input-sender 'aidermacs-input-sender)
+        (aidermacs-comint-mode)
         (setq aidermacs--syntax-work-buffer
-              (get-buffer-create (concat " *aidermacs-syntax" buffer-name)))
-        (add-hook 'kill-buffer-hook #'aidermacs--comint-cleanup-hook nil t)
-        (add-hook 'comint-output-filter-functions #'aidermacs-fontify-blocks 100 t)
-        (add-hook 'comint-output-filter-functions #'aidermacs--comint-output-filter)
-        (aidermacs-comint-mode 1)
-        (font-lock-add-keywords nil aidermacs-font-lock-keywords t)))))
+              (get-buffer-create (concat " *aidermacs-syntax" buffer-name)))))))
 
 (defun aidermacs--send-command-comint (buffer command)
   "Send command to the aidermacs comint buffer.
@@ -370,10 +362,47 @@ The output is collected and passed to the current callback."
     map)
   "Keymap used when `aidermacs-comint-mode' is enabled.")
 
-(define-minor-mode aidermacs-comint-mode
-  "Minor mode for vterm backend buffer used by aidermacs."
-  :init-value nil
-  :keymap aidermacs-comint-mode-map)
+(define-derived-mode aidermacs-comint-mode comint-mode "Aider"
+  "Major mode for interacting with Aidermacs.
+Inherits from `comint-mode' with some Aider-specific customizations.
+\\{aider-comint-mode-map}"
+  :keymap aidermacs-comint-mode-map
+  (setq-local comint-prompt-regexp aidermacs-prompt-regexp)
+  (setq-local comint-input-sender 'aidermacs-input-sender)
+  (add-hook 'kill-buffer-hook #'aidermacs--comint-cleanup-hook nil t)
+  (add-hook 'comint-output-filter-functions #'aidermacs-fontify-blocks 100 t)
+  (add-hook 'comint-output-filter-functions #'aidermacs--comint-output-filter)
+
+  ;; we are going to highlight code blocks ourselves, so set those faces to default. They will still
+  ;; be inserted, but won't be noticeable
+  (setq-local markdown-fontify-code-blocks-natively nil)
+  (let ((inline-foreground (face-attribute 'markdown-inline-code-face :foreground nil 'default))
+        (table-foreground (face-attribute 'markdown-table-face :foreground nil 'default)))
+    (face-remap-add-relative 'markdown-pre-face  :inherit 'default)
+    (face-remap-add-relative 'markdown-code-face  :inherit 'default)
+    ;; preseve these two faces that inherit from markdown-code-face
+    (face-remap-add-relative 'markdown-inline-code-face  :foreground inline-foreground)
+    (face-remap-add-relative 'markdown-table-face  :foreground table-foreground))
+
+  ;; Enable markdown mode highlighting
+  (add-hook 'syntax-propertize-extend-region-functions
+            #'markdown-syntax-propertize-extend-region nil t)
+  (add-hook 'jit-lock-after-change-extend-region-functions
+            #'markdown-font-lock-extend-region-function t t)
+  (set-syntax-table (make-syntax-table markdown-mode-syntax-table))
+  (setq-local syntax-propertize-function #'markdown-syntax-propertize)
+  (setq font-lock-defaults
+        '(markdown-mode-font-lock-keywords
+          nil nil nil nil
+          (font-lock-multiline . t)
+          (font-lock-extra-managed-props
+           . (composition display invisible))))
+  ;; a regex that will never match so we don't get the prompt interpreted as a block quote
+  (setq-local markdown-regex-blockquote "^\\_>$")
+  (if markdown-hide-markup
+      (add-to-invisibility-spec 'markdown-markup)
+    (remove-from-invisibility-spec 'markdown-markup))
+  (font-lock-add-keywords nil aidermacs-font-lock-keywords t))
 
 (provide 'aidermacs-backend-comint)
 
