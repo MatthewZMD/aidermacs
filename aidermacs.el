@@ -64,7 +64,7 @@ Possible values: `code', `ask', `architect', `help'.")
 When set, Aidermacs will pass this to aider via --config flag,
 ignoring other configuration settings except `aidermacs-extra-args'."
   :type '(choice (const :tag "None" nil)
-                 (file :tag "Config file")))
+          (file :tag "Config file")))
 
 (define-obsolete-variable-alias 'aidermacs-args 'aidermacs-extra-args "0.5.0"
   "Old name for `aidermacs-extra-args', please update your config.")
@@ -177,6 +177,7 @@ This is the file name without path."
   ["File Actions"
    ["Add Files (C-u: read-only)"
     ("f" "Add File" aidermacs-add-file)
+    ("p" "Add Project File" aidermacs-add-project-file)
     ("F" "Add Current File" aidermacs-add-current-file)
     ("d" "Add From Directory (same type)" aidermacs-add-same-type-files-under-dir)
     ("w" "Add From Window" aidermacs-add-files-in-current-window)
@@ -197,7 +198,7 @@ This is the file name without path."
     ("r" "Architect Change" aidermacs-architect-this-code)]
    ["Question"
     ("q" "General Question" aidermacs-question-general)
-    ("p" "Question This Symbol" aidermacs-question-this-symbol)
+    ("*" "Question This Symbol" aidermacs-question-this-symbol)
     ("g" "Accept Proposed Changes" aidermacs-accept-change)]
    ["Others"
     ("i" "Implement TODO" aidermacs-implement-todo)
@@ -256,7 +257,7 @@ If supplied, SUFFIX is appended to the buffer name within the earmuffs."
                           ;; Use closest parent if it exists
                           (closest-parent
                            (if (<= (length (expand-file-name closest-parent))
-                                  (length (expand-file-name root)))
+                                   (length (expand-file-name root)))
                                root
                              closest-parent))
                           ;; Fall back to project root for new non-subtree session
@@ -330,7 +331,7 @@ This function sets up the appropriate arguments and launches the process."
          ;; Take the original aidermacs-extra-args instead of the flat ones
          (final-args (append backend-args aidermacs-extra-args)))
     (if (and (get-buffer buffer-name)
-	         (process-live-p (get-buffer-process buffer-name)))
+	     (process-live-p (get-buffer-process buffer-name)))
         (aidermacs-switch-to-buffer buffer-name)
       (aidermacs-run-backend aidermacs-program final-args buffer-name)
       (with-current-buffer buffer-name
@@ -604,7 +605,7 @@ Use highlighted region as context unless IGNORE-CONTEXT is set to non-nil."
             prompt-prefix
             context
             (unless (string-empty-p user-command)
-                (concat ": " user-command)))))
+              (concat ": " user-command)))))
 
 (defun aidermacs-direct-change ()
   "Prompt the user for an input and send it to aidermacs prefixed with \"/code \"."
@@ -754,6 +755,19 @@ With prefix argument `C-u', add as read-only."
              (file-name-nondirectory buffer-file-name)
              (if read-only "read-only" "editable")))))
 
+(defun aidermacs--pick-project-file ()
+  "Prompt for a file in the current project using `completing-read`."
+  (let* ((project-root (aidermacs-project-root))
+         (files (when project-root
+                  (directory-files-recursively project-root ".*" t))))
+    (unless project-root
+      (user-error "No project root found"))
+    (let ((file (completing-read "Select project file to add: "
+                                 (mapcar (lambda (f)
+                                           (file-relative-name f project-root))
+                                         files))))
+      (expand-file-name file project-root))))
+
 (defun aidermacs-add-file (&optional read-only)
   "Add file(s) to aidermacs interactively.
 With prefix argument `C-u', add as READ-ONLY.
@@ -778,6 +792,18 @@ Multiple files can be selected by calling the command multiple times."
        (format "Added %s as %s"
                (file-name-nondirectory file)
                (if read-only "read-only" "editable")))))))
+
+(defun aidermacs-add-project-file (&optional read-only)
+  "Add a file from the current project to the aider session.
+With prefix argument `C-u', add as READ-ONLY."
+  (interactive "P")
+  (let ((file (aidermacs--pick-project-file)))
+    (aidermacs--add-files-helper
+     (list file)
+     read-only
+     (format "Added %s from project as %s"
+             (file-name-nondirectory file)
+             (if read-only "read-only" "editable")))))
 
 (defun aidermacs-add-files-in-current-window (&optional read-only)
   "Add window files with READ-ONLY flag.
