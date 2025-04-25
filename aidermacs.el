@@ -171,6 +171,7 @@ This is the file name without path."
     ("R" "Refresh Repo Map" aidermacs-refresh-repo-map)
     ("h" "Session History" aidermacs-show-output-history)
     ("o" "Switch Model (C-u: weak-model)" aidermacs-change-model)
+    ("W" "Fetch Web Content" aidermacs-web)
     ("?" "Aider Meta-level Help" aidermacs-help)]]
   ["File Actions"
    ["Add Files (C-u: read-only)"
@@ -1101,6 +1102,14 @@ This updates aider's understanding of the repository structure and files."
   (interactive)
   (aidermacs--send-command "/map-refresh")
   (message "Refreshing repository map..."))
+
+(defun aidermacs-web (url)
+  "Fetch web content from URL using aider's web command.
+This allows aider to access online documentation, references, or examples."
+  (interactive "sEnter URL to fetch: ")
+  (when (and url (not (string-empty-p url)))
+    (aidermacs--send-command (format "/web %s" url))
+    (message "Fetching content from %s..." url)))
 
 ;; Add a hook to clean up temp buffers when an aidermacs buffer is killed
 (defun aidermacs--cleanup-on-buffer-kill ()
