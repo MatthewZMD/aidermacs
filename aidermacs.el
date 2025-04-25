@@ -168,6 +168,7 @@ This is the file name without path."
      :if (lambda () aidermacs-auto-commits))
     ("u" "Undo Last Commit" aidermacs-undo-last-commit
      :if (lambda () aidermacs-auto-commits))
+    ("C" "Auto-commit Changes" aidermacs-commit-with-auto-message)
     ("R" "Refresh Repo Map" aidermacs-refresh-repo-map)
     ("h" "Session History" aidermacs-show-output-history)
     ("o" "Switch Model (C-u: weak-model)" aidermacs-change-model)
@@ -665,6 +666,13 @@ If Magit is not installed, report that it is required."
   "Undo the last change made by aidermacs."
   (interactive)
   (aidermacs--send-command "/undo"))
+
+(defun aidermacs-commit-with-auto-message ()
+  "Commit edits to the repo with an automatically generated commit message.
+Uses aider's /commit command without arguments to generate a descriptive
+commit message automatically based on the changes made."
+  (interactive)
+  (aidermacs--send-command "/commit"))
 
 (defun aidermacs-question-this-symbol ()
   "Ask aidermacs to explain symbol under point."
