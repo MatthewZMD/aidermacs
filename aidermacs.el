@@ -757,16 +757,22 @@ With prefix argument `C-u', add as read-only."
 
 (defun aidermacs--pick-project-file ()
   "Prompt for a file in the current project using `completing-read`."
-  (let* ((project-root (aidermacs-project-root))
-         (files (when project-root
-                  (directory-files-recursively project-root ".*" t))))
-    (unless project-root
-      (user-error "No project root found"))
-    (let ((file (completing-read "Select project file to add: "
-                                 (mapcar (lambda (f)
-                                           (file-relative-name f project-root))
-                                         files))))
-      (expand-file-name file project-root))))
+  (let* ((curr-project-root (or (aidermacs-project-root) (user-error "No project root found")))
+         (files
+          (cond
+           ((and curr-project-root
+                 ;; `project-files' can only be used in in Emacs 27.1+
+                 (fboundp 'project-files))
+            ;; Ensure that `project-current' is the same as aidermacs
+            (unless (string= (expand-file-name curr-project-root) (expand-file-name (cdr (project-current))))
+              (user-error "(project-current) does not match (aidermacs-project-root)"))
+            (project-files (project-current)))
+           ;; Fallback to recursive directory listing
+           (t (directory-files-recursively curr-project-root ".*" t))))
+         (choices (mapcar (lambda (f) (file-relative-name f curr-project-root)) files))
+         (file (completing-read "Select project file to add: " choices))
+         (absolute-file (expand-file-name file curr-project-root)))
+    absolute-file))
 
 (defun aidermacs-add-file (&optional read-only)
   "Add file(s) to aidermacs interactively.
