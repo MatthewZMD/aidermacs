@@ -186,9 +186,9 @@ When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
                 (completing-read
                  "Select model type: "
                  '("Main/Reasoning Model" "Editing Model")
-                 nil t))
+                 nil nil))
                (t "Main Model")))
-             (model (completing-read (format "Select %s: " model-type) aidermacs--cached-models nil t)))
+             (model (completing-read (format "Select %s: " model-type) aidermacs--cached-models nil nil)))
         (when model
           (cond
            (set-weak-model
