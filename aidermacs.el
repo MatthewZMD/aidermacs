@@ -604,10 +604,10 @@ Use highlighted region as context unless IGNORE-CONTEXT is set to non-nil."
                     (format " in %s regarding this section:\n```\n%s\n```\n" (buffer-name) region-text)))
          ;; Read user input
          (user-command
-          (read-from-minibuffer
+          (read-string
            (concat command " " prompt-prefix context
                    (when guide (format " (%s)" guide)) ": ")
-           nil nil nil 'aidermacs--read-string-history)))
+           nil 'aidermacs--read-string-history nil nil)))
     ;; Add to history if not already there, removing any duplicates
     (setq aidermacs--read-string-history
           (delete-dups (cons user-command aidermacs--read-string-history)))
