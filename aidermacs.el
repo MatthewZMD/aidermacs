@@ -55,6 +55,10 @@
   "Buffer-local variable to track the current aidermacs mode.
 Possible values: `code', `ask', `architect', `help'.")
 
+(defvar-local aidermacs--ready nil
+  "Buffer-local variable to track whether aider is ready to accept
+commands: `nil', `t'")
+
 (defcustom aidermacs-use-architect-mode nil
   "If non-nil, use separate Architect/Editor mode."
   :type 'boolean)
@@ -266,6 +270,11 @@ If supplied, SUFFIX is appended to the buffer name within the earmuffs."
               (file-truename display-root)
               (or suffix "")))))
 
+(defun aidermacs--live-p (buffer-name)
+  "Return t if the aider buffer is availble and process is currently running"
+  (and (get-buffer buffer-name)
+       (process-live-p (get-buffer-process (or buffer-name (aidermacs-get-buffer-name))))))
+
 ;;;###autoload
 (defun aidermacs-run ()
   "Run aidermacs process using the selected backend.
@@ -330,8 +339,7 @@ This function sets up the appropriate arguments and launches the process."
                '("--subtree-only")))))
          ;; Take the original aidermacs-extra-args instead of the flat ones
          (final-args (append backend-args aidermacs-extra-args)))
-    (if (and (get-buffer buffer-name)
-	     (process-live-p (get-buffer-process buffer-name)))
+    (if (aidermacs--live-p buffer-name)
         (aidermacs-switch-to-buffer buffer-name)
       (aidermacs-run-backend aidermacs-program final-args buffer-name)
       (with-current-buffer buffer-name
@@ -365,8 +373,7 @@ If USE-EXISTING is non-nil, use an existing buffer instead of creating new.
 If REDIRECT is non-nil it redirects the output (hidden) for comint backend.
 If CALLBACK is non-nil it will be called after the command finishes."
   (let* ((buffer-name (aidermacs-get-buffer-name use-existing))
-         (buffer (if (and (get-buffer buffer-name)
-                          (process-live-p (get-buffer-process buffer-name)))
+         (buffer (if (aidermacs--live-p buffer-name)
                      (get-buffer buffer-name)
                    (when (get-buffer buffer-name)
                      (kill-buffer buffer-name))
@@ -376,15 +383,21 @@ If CALLBACK is non-nil it will be called after the command finishes."
          (processed-command (aidermacs--process-message-if-multi-line command)))
     ;; Check if command may edit files and prepare accordingly
     (with-current-buffer buffer
-      ;; Reset current output before sending new command
-      (setq aidermacs--current-output "")
-      (setq aidermacs--current-callback callback)
-      (setq aidermacs--last-command processed-command)
-      (aidermacs--cleanup-temp-buffers)
-      (aidermacs--ensure-current-file-tracked)
-      (when (aidermacs--command-may-edit-files command)
-        (aidermacs--prepare-for-code-edit))
-      (aidermacs--send-command-backend buffer processed-command redirect))
+      ;; Attempt to wait out transient commands or server lag
+      (when (not aidermacs--ready)
+        (sit-for 0.5))
+      (if (not aidermacs--ready)
+          (progn (aidermacs-switch-to-buffer buffer-name)
+                 (message "Aider process is not currently accepting commands"))
+        ;; Reset current output before sending new command
+        (setq aidermacs--current-output "")
+        (setq aidermacs--current-callback callback)
+        (setq aidermacs--last-command processed-command)
+        (aidermacs--cleanup-temp-buffers)
+        (aidermacs--ensure-current-file-tracked)
+        (when (aidermacs--command-may-edit-files command)
+          (aidermacs--prepare-for-code-edit))
+        (aidermacs--send-command-backend buffer processed-command redirect)))
     (when (and (not no-switch-to-buffer)
                (not (string= (buffer-name) buffer-name)))
       (aidermacs-switch-to-buffer buffer-name))))

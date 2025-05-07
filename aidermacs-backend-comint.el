@@ -124,6 +124,7 @@ are next states.")
     ;; Check if the output contains a prompt
     (when (string-match-p aidermacs-prompt-regexp aidermacs--comint-output-temp)
       (aidermacs--store-output aidermacs--comint-output-temp)
+      (setq-local aidermacs--ready t)
       ;; Check if any files were edited and show ediff if needed
       (let ((edited-files (aidermacs--detect-edited-files)))
         (if edited-files
@@ -316,6 +317,7 @@ BUFFER-NAME is the name for the aidermacs buffer."
     (unless (comint-check-proc buffer-name)
       (apply #'make-comint-in-buffer "aidermacs" buffer-name program nil args)
       (with-current-buffer buffer-name
+        (setq-local aidermacs--ready nil)
         (aidermacs-comint-mode)
         (setq aidermacs--syntax-work-buffer
               (get-buffer-create (concat " *aidermacs-syntax" buffer-name)))))))
@@ -326,6 +328,7 @@ BUFFER is the target buffer.  COMMAND is the text to send."
   (with-current-buffer buffer
     (let ((process (get-buffer-process buffer))
           (inhibit-read-only t))
+      (setq-local aidermacs--ready nil)
       (goto-char (process-mark process))
       (aidermacs-reset-font-lock-state)
       (insert (propertize command

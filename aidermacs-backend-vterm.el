@@ -110,6 +110,7 @@ If the finish sequence is detected, store the output via
             ;; If we found a shell prompt indicating output finished
             (when (string-match-p expected prompt-line)
               (aidermacs--store-output (string-trim output))
+              (setq-local aidermacs--ready t)
               (let ((edited-files (aidermacs--detect-edited-files)))
                 ;; Check if any files were edited and show ediff if needed
                 (if edited-files
@@ -250,7 +251,8 @@ BUFFER-NAME is the name for the vterm buffer."
       (with-current-buffer (vterm-other-window)
         (setq-local vterm-max-scrollback 1000
                     aidermacs--vterm-active-timer nil
-                    aidermacs--vterm-last-check-point nil)
+                    aidermacs--vterm-last-check-point nil
+                    aidermacs--ready t)
         (aidermacs-vterm-mode 1)
         ;; Add cleanup hook
         (add-hook 'kill-buffer-hook #'aidermacs--vterm-cleanup nil t))))
@@ -260,6 +262,7 @@ BUFFER-NAME is the name for the vterm buffer."
   "Send command to the aidermacs vterm buffer.
 BUFFER is the target buffer to send to.  COMMAND is the text to send."
   (with-current-buffer buffer
+    (setq-local aidermacs--ready nil)
     ;; Cancel any existing timer to prevent resource leaks
     (aidermacs--maybe-cancel-active-timer)
     ;; Only process if we have a non-empty command
