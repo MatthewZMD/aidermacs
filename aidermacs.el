@@ -587,16 +587,12 @@ Use highlighted region as context unless IGNORE-CONTEXT is set to non-nil."
                         (buffer-substring-no-properties (region-beginning) (region-end))))
          (context (when region-text
                     (format " in %s regarding this section:\n```\n%s\n```\n" (buffer-name) region-text)))
-         ;; Create completion table from common prompts and history
-         (completion-candidates
-          (delete-dups (append aidermacs-common-prompts
-                               aidermacs--read-string-history)))
-         ;; Read user input with completion
-         (user-command (completing-read
-                        (concat command " " prompt-prefix context
-                                (when guide (format " (%s)" guide)) ": ")
-                        completion-candidates nil nil nil
-                        'aidermacs--read-string-history)))
+         ;; Read user input
+         (user-command
+          (read-from-minibuffer
+           (concat command " " prompt-prefix context
+                   (when guide (format " (%s)" guide)) ": ")
+           nil nil nil 'aidermacs--read-string-history)))
     ;; Add to history if not already there, removing any duplicates
     (setq aidermacs--read-string-history
           (delete-dups (cons user-command aidermacs--read-string-history)))
