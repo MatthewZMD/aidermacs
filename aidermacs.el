@@ -438,8 +438,10 @@ If the current buffer is already the aidermacs buffer, do nothing."
 (defun aidermacs-exit ()
   "Send the command \"/exit\" to the aidermacs buffer."
   (interactive)
-  (aidermacs--cleanup-temp-buffers)
-  (aidermacs--send-command "/exit" t))
+  (when (get-buffer (aidermacs-get-buffer-name))
+    (aidermacs--cleanup-temp-buffers)
+    (when (aidermacs--live-p (aidermacs-get-buffer-name))
+      (aidermacs--send-command "/exit" t))))
 
 (defun aidermacs--process-message-if-multi-line (str)
   "Process multi-line chat messages for proper formatting.
