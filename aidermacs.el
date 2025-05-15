@@ -77,8 +77,15 @@ ignoring other configuration settings except `aidermacs-extra-args'."
   "Additional arguments to pass to the aidermacs command."
   :type '(repeat string))
 
-(defcustom aidermacs-read-only-files '()
-  "When non-nil, add read-only files to the aidermacs session."
+(defcustom aidermacs-global-read-only-files '()
+  "When non-nil, add read-only files to the aidermacs session. This
+is for files that are set not relative to project
+directory, ie. project agnostic"
+  :type '(repeat string))
+
+(defcustom aidermacs-project-read-only-files '()
+  "When non-nil, add read-only files to the aidermacs session. This
+is for files that exist relative to the project root."
   :type '(repeat string))
 
 (defcustom aidermacs-subtree-only nil
@@ -341,10 +348,15 @@ This function sets up the appropriate arguments and launches the process."
                (list "--weak-model" aidermacs-weak-model))
              (when aidermacs-subtree-only
                '("--subtree-only"))
-             (when aidermacs-read-only-files
+             (when aidermacs-global-read-only-files
                (apply #'append
-                 (mapcar (lambda (file) (list "--read" file))
-                         aidermacs-read-only-files))))))
+                     (mapcar (lambda (file) (list "--read" file))
+                             aidermacs-global-read-only-files)))
+             (when aidermacs-project-read-only-files
+               (apply #'append
+                     (mapcar (lambda (file) (list "--read"
+                                                 (expand-file-name file (aidermacs-project-root))))
+                             aidermacs-project-read-only-files))))))
          ;; Take the original aidermacs-extra-args instead of the flat ones
          (final-args (append backend-args aidermacs-extra-args)))
     (if (aidermacs--live-p buffer-name)
@@ -354,6 +366,7 @@ This function sets up the appropriate arguments and launches the process."
         ;; Set initial mode based on startup configuration
         (setq-local aidermacs--current-mode (if aidermacs-use-architect-mode 'architect 'code)))
       (aidermacs-switch-to-buffer buffer-name))))
+
 
 (defun aidermacs-run-in-current-dir ()
   "Run aidermacs in the current directory with --subtree-only flag.
