@@ -77,6 +77,10 @@ ignoring other configuration settings except `aidermacs-extra-args'."
   "Additional arguments to pass to the aidermacs command."
   :type '(repeat string))
 
+(defcustom aidermacs-read-only-files '()
+  "When non-nil, add read-only files to the aidermacs session."
+  :type '(repeat string))
+
 (defcustom aidermacs-subtree-only nil
   "When non-nil, run aider with --subtree-only in the current directory.
 This is useful for working in monorepos where you want to limit aider's scope."
@@ -336,7 +340,11 @@ This function sets up the appropriate arguments and launches the process."
              (when aidermacs-weak-model
                (list "--weak-model" aidermacs-weak-model))
              (when aidermacs-subtree-only
-               '("--subtree-only")))))
+               '("--subtree-only"))
+             (when aidermacs-read-only-files
+               (apply #'append
+                 (mapcar (lambda (file) (list "--read" file))
+                         aidermacs-read-only-files))))))
          ;; Take the original aidermacs-extra-args instead of the flat ones
          (final-args (append backend-args aidermacs-extra-args)))
     (if (aidermacs--live-p buffer-name)
