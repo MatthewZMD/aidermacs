@@ -390,6 +390,20 @@ Aidermacs will take note of all the comments that start or end with `AI`. Commen
 
 *Note: These configurations will be overwritten by the existence of an `.aider.conf.yml` file (see [details](#Overwrite-Configuration-with-Configuration-File)).*
 
+### Read-Only Files
+
+You can configure certain files to always be added as read-only when starting any Aidermacs session by setting the `aidermacs-global-read-only-files` and `aidermacs-project-read-only-files`.
+
+```emacs-lisp
+;; Always add these files as read-only to all Aidermacs sessions
+;; For files that exists outside the project directory
+(setq aidermacs-global-read-only-files '("~/.aider/AI_RULES.md"))
+;; For files that exists within the project directory
+(setq aidermacs-project-read-only-files '("CONVENTIONS.md" "README.md"))
+```
+
+When an Aidermacs session starts, these files will be automatically added as read-only if they exist in the project. This is useful for documentation files or other references that you want the AI to be aware of but not modify.
+
 ### Diff and Change Review
 
 Control whether to show diffs for AI-generated changes with `aidermacs-show-diff-after-change`:
