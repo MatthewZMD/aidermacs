@@ -50,6 +50,7 @@
                                          ("bash" . "sh")
                                          ("objective-c" . "objc")
                                          ("objectivec" . "objc")
+                                         ("systemverilog" . "verilog")
                                          ("cpp" . "c++"))
   "Map external language names to Emacs names."
   :type '(alist :key-type (string :tag "Language Name/Alias")
@@ -408,6 +409,11 @@ Inherits from `comint-mode' with some Aider-specific customizations.
            . (composition display invisible))))
   ;; a regex that will never match so we don't get the prompt interpreted as a block quote
   (setq-local markdown-regex-blockquote "^\\_>$")
+  ;; don't use underscore for italics or bold
+  (setq-local markdown-regex-italic
+              "\\(?:^\\|[^\\]\\)\\(?1:\\(?2:[*]\\)\\(?3:[^ \n\t\\]\\|[^ \n\t*]\\(?:.\\|\n[^\n]\\)*?[^\\ ]\\)\\(?4:\\2\\)\\)")
+  (setq-local markdown-regex-bold
+              "\\(?1:^\\|[^\\]\\)\\(?2:\\(?3:\\*\\*\\)\\(?4:[^ \n\t\\]\\|[^ \n\t]\\(?:.\\|\n[^\n]\\)*?[^\\ ]\\)\\(?5:\\3\\)\\)")
   (if markdown-hide-markup
       (add-to-invisibility-spec 'markdown-markup)
     (remove-from-invisibility-spec 'markdown-markup))
