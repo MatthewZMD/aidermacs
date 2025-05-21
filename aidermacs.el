@@ -133,13 +133,15 @@ These will be available for selection when using aidermacs commands."
 Returns a version string like \"0.77.0\" or nil if version can't be determined.
 Uses cached version if available to avoid repeated process calls."
   (interactive)
-  (or aidermacs--cached-version
-      (setq aidermacs--cached-version
-            (with-temp-buffer
-              (when (= 0 (call-process aidermacs-program nil t nil "--version"))
-                (goto-char (point-min))
-                (when (re-search-forward "aider \\([0-9]+\\.[0-9]+\\.[0-9]+\\)" nil t)
-                  (match-string 1))))))
+  (let ((path exec-path))
+    (or aidermacs--cached-version
+        (setq aidermacs--cached-version
+              (with-temp-buffer
+                (setq-local exec-path path)
+                (when (= 0 (call-process aidermacs-program nil t nil "--version"))
+                  (goto-char (point-min))
+                  (when (re-search-forward "aider \\([0-9]+\\.[0-9]+\\.[0-9]+\\)" nil t)
+                    (match-string 1)))))))
   (message "Aider version %s" aidermacs--cached-version)
   aidermacs--cached-version)
 
