@@ -21,8 +21,7 @@
 ;;; Code:
 
 (require 'aidermacs-backend-comint)
-(when (commandp 'vterm)
-  (require 'aidermacs-backend-vterm))
+(require 'aidermacs-backend-vterm)
 
 (declare-function aidermacs-run-vterm "aidermacs-backend-vterm")
 (declare-function aidermacs--send-command-vterm "aidermacs-backend-vterm")
