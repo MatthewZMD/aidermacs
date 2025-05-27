@@ -237,39 +237,41 @@ _OUTPUT is the text to be processed."
                 ;; We can process till the end of the text
                 (t (point-max))))
 
-    ;; Append new content to temp buffer and fontify
-    (let ((new-content (buffer-substring-no-properties
-                        last-output-start
-                        aidermacs--syntax-block-end-pos))
-          (pos aidermacs--syntax-block-start-pos)
-          (font-pos 0)
-          fontified)
+    (if (<= aidermacs--syntax-block-end-pos last-output-start)
+        (setq aidermacs--syntax-block-end-pos last-output-start)
+      ;; Append new content to temp buffer and fontify
+      (let ((new-content (buffer-substring-no-properties
+                          last-output-start
+                          aidermacs--syntax-block-end-pos))
+            (pos aidermacs--syntax-block-start-pos)
+            (font-pos 0)
+            fontified)
 
-      ;; Insert the new text and get the fontified result
-      (with-current-buffer aidermacs--syntax-work-buffer
-        (goto-char (point-max))
-        (with-demoted-errors "aidermacs block font lock error: %S"
-          (let ((inhibit-message t))
-            (insert new-content)
-            (font-lock-ensure)))
-        (setq fontified (buffer-string)))
+        ;; Insert the new text and get the fontified result
+        (with-current-buffer aidermacs--syntax-work-buffer
+          (goto-char (point-max))
+          (with-demoted-errors "aidermacs block font lock error: %S"
+            (let ((inhibit-message t))
+              (insert new-content)
+              (font-lock-ensure)))
+          (setq fontified (buffer-string)))
 
-      ;; Apply the faces to the buffer
-      (remove-overlays aidermacs--syntax-block-start-pos aidermacs--syntax-block-end-pos)
+        ;; Apply the faces to the buffer
+        (remove-overlays aidermacs--syntax-block-start-pos aidermacs--syntax-block-end-pos)
 
-      (while (< pos aidermacs--syntax-block-end-pos)
-        (let* ((next-font-pos (or (next-property-change font-pos fontified) (length fontified)))
-               (next-pos (+ aidermacs--syntax-block-start-pos next-font-pos))
-               (face (get-text-property font-pos 'face fontified)))
-          (ansi-color-apply-overlay-face pos next-pos face)
-          ;; Detect potential infinite loop - position didn't advance
-          (if (eq pos next-pos)
-              (progn
-                (display-warning 'aidermacs
-				 (format "aidermacs: Font-lock position didn't advance at pos %d" pos))
-                (setq pos aidermacs--syntax-block-end-pos))
-            (setq pos next-pos
-                  font-pos next-font-pos)))))
+        (while (< pos aidermacs--syntax-block-end-pos)
+          (let* ((next-font-pos (or (next-property-change font-pos fontified) (length fontified)))
+                 (next-pos (+ aidermacs--syntax-block-start-pos next-font-pos))
+                 (face (get-text-property font-pos 'face fontified)))
+            (ansi-color-apply-overlay-face pos next-pos face)
+            ;; Detect potential infinite loop - position didn't advance
+            (if (eq pos next-pos)
+                (progn
+                  (display-warning 'aidermacs
+                                   (format "aidermacs: Font-lock position didn't advance at pos %d" pos))
+                  (setq pos aidermacs--syntax-block-end-pos))
+              (setq pos next-pos
+                    font-pos next-font-pos))))))
     end-of-block-p))
 
 (defun aidermacs--guess-major-mode ()
