@@ -189,6 +189,7 @@ This is the file name without path."
     ("R" "Refresh Repo Map" aidermacs-refresh-repo-map)
     ("h" "Session History" aidermacs-show-output-history)
     ("o" "Switch Model (C-u: weak-model)" aidermacs-change-model)
+    ("v" "Send Voice" aidermacs-send-voice)
     ("W" "Fetch Web Content" aidermacs-web)
     ("?" "Aider Meta-level Help" aidermacs-help)]]
   ["File Actions"
@@ -1223,6 +1224,12 @@ This updates aider's understanding of the repository structure and files."
   (interactive)
   (aidermacs--send-command "/map-refresh")
   (message "Refreshing repository map..."))
+
+(defun aidermacs-send-voice ()
+  "send /voice command to aidermacs"
+  (interactive)
+  (aidermacs--send-command "/voice")
+  (message "aidermacs awaiting speech"))
 
 (defun aidermacs-web (url)
   "Fetch web content from URL using aider's web command.
