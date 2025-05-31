@@ -20,6 +20,7 @@
 (declare-function aidermacs-project-root "aidermacs")
 (declare-function aidermacs--is-aidermacs-buffer-p "aidermacs")
 (declare-function aidermacs--prepare-file-paths-for-command "aidermacs")
+(declare-function aidermacs--send-command-backend "aidermacs-backends")
 
 (defgroup aidermacs-output nil
   "Output manipulation for Aidermacs."
