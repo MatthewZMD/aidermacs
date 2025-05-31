@@ -121,7 +121,7 @@ Once the transient menu is open, you can navigate and execute commands using the
 - `R`: Refresh Repo Map
 - `h`: Session History
 - `o`: Change Main Model
-- `v`: Send Voice
+- `v`: Send Voice Command
 - `W`: Fetch Web Content
 - `?`: Aider Meta-level Help
 
