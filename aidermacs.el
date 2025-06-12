@@ -59,9 +59,30 @@ Possible values: `code', `ask', `architect', `help'.")
   "Buffer-local variable to track whether aider is ready to accept
 commands: `nil', `t'")
 
+(defcustom aidermacs-default-chat-mode nil
+  "Chat mode used when an Aidermacs session starts.
+
+nil / 'code  – start in code mode (no --chat-mode arg)
+'ask         – start in ask/chat mode   (--chat-mode ask)
+'architect   – start in architect mode  (--chat-mode architect + model flags)
+'help        – start in help mode       (--chat-mode help)."
+  :type '(choice (const :tag "Code (default)" nil)
+                 (const :tag "Code"       code)
+                 (const :tag "Ask"        ask)
+                 (const :tag "Architect"  architect)
+                 (const :tag "Help"       help)))
+
+;; DEPRECATED – will disappear in a future release
 (defcustom aidermacs-use-architect-mode nil
-  "If non-nil, use separate Architect/Editor mode."
-  :type 'boolean)
+  "OBSOLETE.  Non-nil means start Aidermacs in Architect mode.
+
+Instead, set `aidermacs-default-chat-mode' to the symbol `architect'."
+  :type 'boolean
+  :group 'aidermacs)
+
+(make-obsolete-variable 'aidermacs-use-architect-mode
+                        'aidermacs-default-chat-mode
+                        "1.5")
 
 (defcustom aidermacs-config-file nil
   "Path to aider configuration file.
@@ -308,6 +329,15 @@ If supplied, SUFFIX is appended to the buffer name within the earmuffs."
   "Run aidermacs process using the selected backend.
 This function sets up the appropriate arguments and launches the process."
   (interactive)
+  ;; Legacy boolean ⇒ new symbol
+  (when (and aidermacs-use-architect-mode
+             (null aidermacs-default-chat-mode))
+    (setq aidermacs-default-chat-mode 'architect)
+    (display-warning
+     'aidermacs
+     "`aidermacs-use-architect-mode' is obsolete – \
+set `aidermacs-default-chat-mode' to 'architect' instead."
+     :warning))
   ;; Set up necessary hooks when aidermacs is actually run
   (aidermacs--setup-ediff-cleanup-hooks)
   (aidermacs--setup-cleanup-hooks)
@@ -337,53 +367,66 @@ This function sets up the appropriate arguments and launches the process."
                                       '("--config" "-c"))))
          ;; Check aider version for auto-accept-architect support
          (aider-version (aidermacs-aider-version))
-         (backend-args
-          (if has-config-arg
-              ;; Only need to add aidermacs-config-file manually
-              (when aidermacs-config-file
-                (list "--config" aidermacs-config-file))
-            (append
-             (if aidermacs-use-architect-mode
-                 (list "--architect"
-                       "--model" (aidermacs-get-architect-model)
-                       "--editor-model" (aidermacs-get-editor-model))
-               (unless has-model-arg
-                 (list "--model" aidermacs-default-model)))
-             (unless aidermacs-auto-commits
-               '("--no-auto-commits"))
-             ;; Only add --no-auto-accept-architect if:
-             ;; 1. User has disabled auto-accept (aidermacs-auto-accept-architect is nil)
-             ;; 2. Aider version supports this flag (>= 0.77.0)
-             (when (and (not aidermacs-auto-accept-architect)
-                        (version<= "0.77.0" aider-version))
-               '("--no-auto-accept-architect"))
-             ;; Add watch-files if enabled
-             (when aidermacs-watch-files
-               '("--watch-files"))
-             ;; Add weak model if specified
-             (when aidermacs-weak-model
-               (list "--weak-model" aidermacs-weak-model))
-             (when aidermacs-subtree-only
-               '("--subtree-only"))
-             (when aidermacs-global-read-only-files
-               (apply #'append
-                     (mapcar (lambda (file) (list "--read" file))
-                             aidermacs-global-read-only-files)))
-             (when aidermacs-project-read-only-files
-               (apply #'append
-                     (mapcar (lambda (file) (list "--read"
-                                                 (expand-file-name file (aidermacs-project-root))))
-                             aidermacs-project-read-only-files))))))
-         ;; Take the original aidermacs-extra-args instead of the flat ones
-         (final-args (append backend-args aidermacs-extra-args)))
-    (if (aidermacs--live-p buffer-name)
-        (aidermacs-switch-to-buffer buffer-name)
-      (aidermacs-run-backend aidermacs-program final-args buffer-name)
-      (with-current-buffer buffer-name
-        ;; Set initial mode based on startup configuration
-        (setq-local aidermacs--current-mode (if aidermacs-use-architect-mode 'architect 'code)))
-      (aidermacs-switch-to-buffer buffer-name))))
 
+         ;; New code: determine startup mode and warnings
+         (startup-mode aidermacs-default-chat-mode)
+         (needs-chat-flag (and startup-mode (not (eq startup-mode 'code))))
+         (architect? (eq startup-mode 'architect)))
+    (let* ((backend-args
+            (if has-config-arg
+                ;; Only need to add aidermacs-config-file manually
+                (when aidermacs-config-file
+                  (list "--config" aidermacs-config-file))
+              (append
+               ;; --chat-mode when required (ask/help/architect)
+               (when needs-chat-flag
+                 (list "--chat-mode" (symbol-name startup-mode)))
+
+               ;; extra model flags for architect
+               (when architect?
+                 (list "--model"        (aidermacs-get-architect-model)
+                       "--editor-model" (aidermacs-get-editor-model)))
+
+               ;; default --model when we’re still in plain code mode and user
+               ;; didn’t supply one
+               (when (and (not needs-chat-flag) (not has-model-arg))
+                 (list "--model" aidermacs-default-model))
+
+               ;; existing flags that follow (no change)
+               (unless aidermacs-auto-commits
+                 '("--no-auto-commits"))
+               ;; Only add --no-auto-accept-architect if:
+               ;; 1. User has disabled auto-accept (aidermacs-auto-accept-architect is nil)
+               ;; 2. Aider version supports this flag (>= 0.77.0)
+               (when (and (not aidermacs-auto-accept-architect)
+                          (version<= "0.77.0" aider-version))
+                 '("--no-auto-accept-architect"))
+               ;; Add watch-files if enabled
+               (when aidermacs-watch-files
+                 '("--watch-files"))
+               ;; Add weak model if specified
+               (when aidermacs-weak-model
+                 (list "--weak-model" aidermacs-weak-model))
+               (when aidermacs-subtree-only
+                 '("--subtree-only"))
+               (when aidermacs-global-read-only-files
+                 (apply #'append
+                        (mapcar (lambda (file) (list "--read" file))
+                                aidermacs-global-read-only-files)))
+               (when aidermacs-project-read-only-files
+                 (apply #'append
+                        (mapcar (lambda (file) (list "--read"
+                                                     (expand-file-name file (aidermacs-project-root))))
+                                aidermacs-project-read-only-files))))))
+           ;; Take the original aidermacs-extra-args instead of the flat ones
+           (final-args (append backend-args aidermacs-extra-args)))
+      (if (aidermacs--live-p buffer-name)
+          (aidermacs-switch-to-buffer buffer-name)
+        (aidermacs-run-backend aidermacs-program final-args buffer-name)
+        (with-current-buffer buffer-name
+          ;; Set initial mode based on startup configuration
+          (setq-local aidermacs--current-mode startup-mode))
+        (aidermacs-switch-to-buffer buffer-name)))))
 
 (defun aidermacs-run-in-current-dir ()
   "Run aidermacs in the current directory with --subtree-only flag.
