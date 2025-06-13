@@ -98,9 +98,6 @@ When nil, skip preparing temp buffers and showing ediff comparisons."
   "Alist of (filename . temp-buffer) storing file state before Aider edits.
 These contain the original content of files that might be modified by Aider.")
 
-(defvar-local aidermacs--ediff-queue nil
-  "Buffer-local queue of files waiting to be processed by ediff.")
-
 (defvar aidermacs--pre-ediff-window-config nil
   "Window configuration before starting ediff sessions.")
 
@@ -190,14 +187,47 @@ This is skipped if `aidermacs-show-diff-after-change' is nil."
           (message "Prepared code edit for %d files" (length aidermacs--pre-edit-file-buffers)))))))
 
 (defun aidermacs--ediff-quit-handler ()
-  "Handle ediff session cleanup and process next files in queue.
-This function is called when an ediff session is quit and processes
-the next file in the ediff queue if any remain."
+  "Handle ediff session cleanup.
+This function is called when an ediff session is quit."
   (when (and (boundp 'ediff-buffer-A)
              (buffer-live-p ediff-buffer-A)
              (string-match " \\*aidermacs-pre-edit:"
                            (buffer-name ediff-buffer-A)))
-    (aidermacs--process-next-ediff-file)))
+
+    (when (and (buffer-live-p ediff-buffer-B) (buffer-modified-p ediff-buffer-B))
+      (save-some-buffers ediff-buffer-B))
+
+    ;; Cleanup ediff buffers
+    (aidermacs--ediff-cleanup-auxiliary-buffers)
+    ;; Restore original window configuration
+    (when aidermacs--pre-ediff-window-config
+      (set-window-configuration aidermacs--pre-ediff-window-config))))
+
+(defun aidermacs--ediff-cleanup-auxiliary-buffers ()
+  (let* ((ctl-buf ediff-control-buffer)
+         (ctl-win (ediff-get-visible-buffer-window ctl-buf))
+         (ctl-frm ediff-control-frame)
+         (main-frame (cond ((window-live-p ediff-window-A)
+                            (window-frame ediff-window-A))
+                           ((window-live-p ediff-window-B)
+                            (window-frame ediff-window-B)))))
+    (ediff-kill-buffer-carefully ediff-diff-buffer)
+    (ediff-kill-buffer-carefully ediff-custom-diff-buffer)
+    (ediff-kill-buffer-carefully ediff-fine-diff-buffer)
+    (ediff-kill-buffer-carefully ediff-tmp-buffer)
+    (ediff-kill-buffer-carefully ediff-error-buffer)
+    (ediff-kill-buffer-carefully ediff-msg-buffer)
+    (ediff-kill-buffer-carefully ediff-debug-buffer)
+    (when (boundp 'ediff-patch-diagnostics)
+      (ediff-kill-buffer-carefully ediff-patch-diagnostics))
+    (cond ((and (display-graphic-p)
+                (frame-live-p ctl-frm))
+           (delete-frame ctl-frm))
+          ((window-live-p ctl-win)
+           (delete-window ctl-win)))
+    (ediff-kill-buffer-carefully ctl-buf)
+    (when (frame-live-p main-frame)
+      (select-frame main-frame))))
 
 (defun aidermacs--setup-ediff-cleanup-hooks ()
   "Set up hooks to ensure proper cleanup of temporary buffers after ediff.
@@ -393,30 +423,58 @@ Returns a list of files that have been modified according to the output."
       valid-files)))
 
 (defun aidermacs--show-ediff-for-edited-files (edited-files)
-  "Show ediff for each file in EDITED-FILES.
+  "Show a list of edited files in EDITED-FILES for selection.
 This is skipped if `aidermacs-show-diff-after-change' is nil."
   (when (and aidermacs-show-diff-after-change edited-files)
-    ;; Save current window configuration
-    (setq aidermacs--pre-ediff-window-config (current-window-configuration))
-    ;; Set up the queue in the current buffer
-    (setq-local aidermacs--ediff-queue edited-files)
-    ;; Process the first file
-    (aidermacs--process-next-ediff-file)))
+    (aidermacs--show-file-selection-buffer edited-files)))
 
-(defun aidermacs--process-next-ediff-file ()
-  "Process the next file in the ediff queue for the current buffer."
-  (with-current-buffer (get-buffer (aidermacs-get-buffer-name))
-    (if aidermacs--ediff-queue
-        (let ((file (pop aidermacs--ediff-queue)))
-          (aidermacs--show-ediff-for-file file))
-      (aidermacs--cleanup-temp-buffers)
-      ;; Restore original window configuration
-      (when aidermacs--pre-ediff-window-config
-        (set-window-configuration aidermacs--pre-ediff-window-config)
-        (setq aidermacs--pre-ediff-window-config nil)))))
+(define-derived-mode aidermacs-file-diff-selection-mode special-mode "Aider Diff Files"
+  "Major mode for selecting files edited by Aider."
+  :group 'aidermacs
+  (font-lock-mode 1)
+  (setq buffer-read-only t))
+
+(define-key aidermacs-file-diff-selection-mode-map (kbd "q")
+  (lambda ()
+    (interactive)
+    (kill-buffer)
+    (aidermacs--cleanup-temp-buffers)))
+
+(defun aidermacs--show-file-selection-buffer (files)
+  "Display a buffer with a list of FILES that were edited.
+User can select a file to view its diff."
+  (let ((buf (get-buffer-create "*aidermacs-edited-files*"))
+        (pre-edit-file-buffers aidermacs--pre-edit-file-buffers))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (aidermacs-file-diff-selection-mode)
+        (setq-local aidermacs--pre-edit-file-buffers pre-edit-file-buffers)
+        
+        (insert "Files modified by Aider:\n")
+        (insert "=======================\n\n")
+        (insert "Press RET on a file to view diff, q to quit\n\n")
+        
+        (dolist (file files)
+          (insert-text-button file
+                             'action (lambda (_) 
+                                      (aidermacs--show-ediff-for-file file))
+                             'follow-link t
+                             'help-echo "Click to view diff for this file")
+          (insert "\n"))
+        
+        (goto-char (point-min))
+        (forward-line 5)))
+
+    ;; Display the buffer after the hooks are completed
+    (run-with-timer 0 nil (lambda () (interactive)
+                          (switch-to-buffer-other-window buf)))))
+
 
 (defun aidermacs--show-ediff-for-file (file)
   "Uses the pre-edit buffer stored to compare with the current FILE state."
+  (setq aidermacs--pre-ediff-window-config (current-window-configuration))
+  
   (let* ((full-path (expand-file-name file (aidermacs-project-root)))
          (pre-edit-pair (assoc full-path aidermacs--pre-edit-file-buffers))
          (pre-edit-buffer (and pre-edit-pair (cdr pre-edit-pair))))
@@ -426,12 +484,10 @@ This is skipped if `aidermacs-show-diff-after-change' is nil."
                                     (find-file-noselect full-path))))
             (with-current-buffer current-buffer
               (revert-buffer t t t))
-            (delete-other-windows (get-buffer-window (switch-to-buffer current-buffer)))
             ;; Start ediff session
             (ediff-buffers pre-edit-buffer current-buffer)))
-      ;; If no pre-edit buffer found, continue with next file
-      (message "No pre-edit buffer found for %s, skipping" file)
-      (aidermacs--process-next-ediff-file))))
+      ;; If no pre-edit buffer found, simply show buffer
+      (find-file file))))
 
 (provide 'aidermacs-output)
 ;;; aidermacs-output.el ends here
