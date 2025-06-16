@@ -55,7 +55,7 @@ Here's what the community is saying about Aidermacs:
   (setenv "OPENROUTER_API_KEY" (my-get-openrouter-api-key))
   :custom
   ; See the Configuration section below
-  (aidermacs-use-architect-mode t)
+  (aidermacs-default-chat-mode 'architect)
   (aidermacs-default-model "sonnet"))
 ```
 4. Open a project and run `M-x aidermacs-transient-menu` or `SPC a a` (or your chosen binding).
@@ -69,7 +69,7 @@ For **Spacemacs** users:
 ```emacs-lisp
 dotspacemacs-additional-packages '(
   (aidermacs :variables
-              aidermacs-use-architect-mode t
+              aidermacs-default-chat-mode 'architect
               aidermacs-default-model "sonnet")
 )
 ```
@@ -240,18 +240,22 @@ The system will automatically filter models to only show ones that are:
 
 Aidermacs features an experimental mode using two specialized models for each coding task: an Architect model for reasoning and an Editor model for code generation. This approach has **achieved state-of-the-art (SOTA) results on aider's code editing benchmark**, as detailed in [this blog post](https://aider.chat/2024/09/26/architect.html).
 
-To enable this mode, set `aidermacs-use-architect-mode` to `t`. You must also configure the `aidermacs-architect-model` variable to specify the model to use for the Architect role.
+To start new sessions in Architect mode by default, set `aidermacs-default-chat-mode` to `'architect`.
+
+`aidermacs-use-architect-mode` is **deprecated** and will be removed in a future release.
+
+`architect` mode will default to using `aidermacs-default-model`. You may also configure the `aidermacs-architect-model` variable to specify the model to use for the Architect role if you prefer a different main model when using `architect` mode.
 
 By default, the `aidermacs-editor-model` is the same as `aidermacs-default-model`. You only need to set `aidermacs-editor-model` if you want to use a different model for the Editor role.
 
-When Architect mode is enabled, the `aidermacs-default-model` setting is ignored, and `aidermacs-architect-model` and `aidermacs-editor-model` are used instead.
-
 ```emacs-lisp
-(setq aidermacs-use-architect-mode t)
+(setq aidermacs-default-chat-mode 'architect)
 ```
+
 You can switch to it persistently by `M-x aidermacs-switch-to-architect-mode` (`3` in `aidermacs-transient-menu`), or temporarily with `M-x aidermacs-architect-this-code` (`r` in `aidermacs-transient-menu`).
 
 You can configure each model independently:
+
 ```emacs-lisp
 ;; Default model used for all modes unless overridden
 (setq aidermacs-default-model "sonnet")
