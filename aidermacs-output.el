@@ -159,6 +159,7 @@ Kills all pre-edit buffers that were created to store original file content."
 Creates temporary buffers containing the original content of all tracked files.
 This is skipped if `aidermacs-show-diff-after-change' is nil."
   (when aidermacs-show-diff-after-change
+    (aidermacs--cleanup-temp-buffers)
     (when-let* ((files aidermacs--tracked-files))
       (let ((attempts 0)
             (max-attempts 3))
@@ -434,15 +435,20 @@ This is skipped if `aidermacs-show-diff-after-change' is nil."
   (font-lock-mode 1)
   (setq buffer-read-only t))
 
-(define-key aidermacs-file-diff-selection-mode-map (kbd "q")
-  (lambda ()
-    (interactive)
-    (kill-buffer)
-    (aidermacs--cleanup-temp-buffers)))
+(defun aidermacs--file-diff-selection-quit ()
+  "Quit file selection"
+  (interactive)
+  (kill-buffer)
+  (aidermacs--cleanup-temp-buffers))
+
+(define-key aidermacs-file-diff-selection-mode-map (kbd "q") 'aidermacs--file-diff-selection-quit)
 
 (defun aidermacs--show-file-selection-buffer (files)
   "Display a buffer with a list of FILES that were edited.
 User can select a file to view its diff."
+  (when-let (buf (get-buffer "*aidermacs-edited-files*"))
+    (kill-buffer buf))
+
   (let ((buf (get-buffer-create "*aidermacs-edited-files*"))
         (pre-edit-file-buffers aidermacs--pre-edit-file-buffers))
     (with-current-buffer buf
