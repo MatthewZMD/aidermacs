@@ -42,8 +42,9 @@
   "Model selection for Aidermacs."
   :group 'aidermacs)
 
-(defcustom aidermacs-default-model "sonnet"
-  "Default AI model to use for aidermacs sessions when not in Architect mode."
+(defcustom aidermacs-default-model (or (getenv "AIDER_MODEL") "sonnet")
+  "Default AI model to use for aidermacs sessions when not in Architect mode.
+Respects the `AIDER_MODEL' environment variable if set."
   :type 'string)
 
 (defcustom aidermacs-architect-model nil
@@ -52,15 +53,17 @@ If nil, uses the value of `aidermacs-default-model'."
   :type '(choice (const :tag "Use default model" nil)
                  (string :tag "Specific model")))
 
-(defcustom aidermacs-editor-model nil
+(defcustom aidermacs-editor-model (getenv "AIDER_EDITOR_MODEL")
   "Default editing AI model to use for architect mode.
-If nil, uses the value of `aidermacs-default-model'."
+If nil, uses the value of `aidermacs-default-model'.
+Respects the `AIDER_EDITOR_MODEL' environment variable if set."
   :type '(choice (const :tag "Use default model" nil)
                  (string :tag "Specific model")))
 
-(defcustom aidermacs-weak-model nil
+(defcustom aidermacs-weak-model (getenv "AIDER_WEAK_MODEL")
   "Default weak AI model to use.
-If nil, uses a model automatically selected based on the default model."
+If nil, uses a model automatically selected based on the default model.
+Respects the `AIDER_WEAK_MODEL' environment variable if set."
   :type '(choice (const :tag "Use default model" nil)
                  (string :tag "Specific model")))
 
