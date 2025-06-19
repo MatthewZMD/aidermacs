@@ -203,8 +203,13 @@ This approach keeps sensitive information out of your dotfiles while still makin
 
 ### Default Model Selection
 
-You can customize the default AI model used by Aidermacs by setting the `aidermacs-default-model` variable:
+You can customize the default AI model used by Aidermacs. The model is determined in the following order of priority:
 
+1.  The value of the Emacs variable `aidermacs-default-model` if you have set it (e.g., via `setq`).
+2.  The value of the `AIDER_MODEL` environment variable, if set.
+3.  A built-in default value (e.g., `"sonnet"`).
+
+To set it in Emacs:
 ```emacs-lisp
 (setq aidermacs-default-model "sonnet")
 ```
@@ -246,7 +251,7 @@ To start new sessions in Architect mode by default, set `aidermacs-default-chat-
 
 `architect` mode will default to using `aidermacs-default-model`. You may also configure the `aidermacs-architect-model` variable to specify the model to use for the Architect role if you prefer a different main model when using `architect` mode.
 
-By default, the `aidermacs-editor-model` is the same as `aidermacs-default-model`. You only need to set `aidermacs-editor-model` if you want to use a different model for the Editor role.
+By default, the `aidermacs-editor-model` is the same as `aidermacs-default-model`. You only need to set `aidermacs-editor-model` if you want to use a different model for the Editor role. This variable also respects the `AIDER_EDITOR_MODEL` environment variable, following the same priority as `aidermacs-default-model`.
 
 ```emacs-lisp
 (setq aidermacs-default-chat-mode 'architect)
@@ -280,7 +285,7 @@ Models will reflect changes to `aidermacs-default-model` unless they've been exp
 
 ### Customize Weak Model
 
-The Weak model is used for commit messages (if you have `aidermacs-auto-commits` set to `t`) and chat history summarization (default depends on –model). You can customize it using
+The Weak model is used for commit messages (if you have `aidermacs-auto-commits` set to `t`) and chat history summarization (default depends on –model). You can customize it using the `aidermacs-weak-model` variable, which also respects the `AIDER_WEAK_MODEL` environment variable.
 
 ```emacs-lisp
 ;; default to nil
@@ -476,9 +481,18 @@ Aidermacs supports project-specific configurations via `.aider.conf.yml` files. 
 
 *Note: You can also rely on Aider's default behavior of automatically searching for `.aider.conf.yml` in the home directory, project root, or current directory, in that order. In this case, you do not need to set `aidermacs-config-file` or include `--config` in `aidermacs-extra-args`.*
 
-* **Important:** When using a config file, all other Aidermacs configuration variables supplying an argument option (e.g., `aidermacs-default-model`, `aidermacs-architect-model`, `aidermacs-use-architect-mode`) are **IGNORED**. Aider will *only* use the settings specified in your `.aider.conf.yml` file. Do not attempt to combine these Emacs settings with a config file, as the results will be unpredictable.
-* **Precedence:** Settings in `.aider.conf.yml` *always* take precedence when a config file is explicitly specified.
-* **Avoid Conflicts:** When using a config file, *do not* include model-related arguments (like `--model`, `--architect`, etc.) in `aidermacs-extra-args`.  Configure *all* settings within your `.aider.conf.yml` file.
+* **Important: Configuration Precedence**
+
+When an Aidermacs session starts, it determines which settings to use based on the following hierarchy:
+
+1.  **Aider Configuration File (`.aider.conf.yml`):** If a config file is found (either in a default location or specified via `aidermacs-config-file` or `aidermacs-extra-args`), it takes **highest priority**. Aidermacs will **ignore** its own Emacs variables (like `aidermacs-default-model`) and let the `aider` tool manage settings directly from the file. The precedence is then determined by `aider` itself (where command-line arguments override environment variables, which override the config file).
+
+2.  **Emacs Configuration (if no config file is used):** If no `.aider.conf.yml` is present, Aidermacs will build the command-line arguments for `aider`. The values it uses are determined by this order of priority:
+    a. **Emacs Variables (Highest):** Values you set in your `init.el` (e.g., `(setq aidermacs-default-model "...")`).
+    b. **Environment Variables:** If an Emacs variable is not set, its value is taken from the corresponding environment variable (e.g., `AIDER_MODEL`).
+    c. **Built-in Defaults (Lowest):** If neither of the above are set, a hardcoded default is used.
+
+**To avoid conflicts:** When using a `.aider.conf.yml` file, you should define all your settings within that file. Do not set variables like `aidermacs-default-model` in Emacs or pass arguments like `--model` in `aidermacs-extra-args`, as they will be ignored and can cause confusion.
 
 ### Claude 3.7 Sonnet Thinking Tokens
 
