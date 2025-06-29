@@ -369,7 +369,7 @@ set `aidermacs-default-chat-mode' to 'architect' instead."
          (aider-version (aidermacs-aider-version))
 
          ;; New code: determine startup mode and warnings
-         (startup-mode aidermacs-default-chat-mode)
+         (startup-mode (or aidermacs-default-chat-mode 'code))
          (needs-chat-flag (and startup-mode (not (eq startup-mode 'code))))
          (architect? (eq startup-mode 'architect)))
     (let* ((backend-args
