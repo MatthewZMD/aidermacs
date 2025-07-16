@@ -160,7 +160,7 @@ Use BUFFER if provided, otherwise retrieve it from `aidermacs-get-buffer-name'."
   "Filter text using ORIG-FUN with ARGS for cleaner vterm display.
 Converts multiple spaces to newlines and trims trailing whitespace."
   (let* ((text (apply orig-fun args))
-         (space-fixed (replace-regexp-in-string "[ \t]{3,}" "\n" text))
+         (space-fixed (replace-regexp-in-string "[ \t]\\{3\\}" "\n" text))
          (lines (split-string space-fixed "\n"))
          (clean-lines (mapcar #'string-trim-right lines))
          (fixed-text (string-join clean-lines "\n")))
