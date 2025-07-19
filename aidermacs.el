@@ -197,6 +197,7 @@ This is the file name without path."
    ["Core"
     ("a" "Start/Open Session" aidermacs-run)
     ("." "Start in Current Dir" aidermacs-run-in-current-dir)
+    (":" "Start in Chosen Dir" aidermacs-run-in-directory)
     ("l" "Clear Chat History" aidermacs-clear-chat-history)
     ("s" "Reset Session" aidermacs-reset)
     ("x" "Exit Session" aidermacs-exit)]
@@ -433,6 +434,15 @@ set `aidermacs-default-chat-mode' to 'architect' instead."
 This is useful for working in monorepos where you want to limit aider's scope."
   (interactive)
   (let ((aidermacs-subtree-only t))
+    (aidermacs-run)))
+
+(defun aidermacs-run-in-directory (directory)
+  "Prompt for a directory and run aidermacs with --subtree-only flag.
+This is useful for working in complex monorepos with nested subprojects."
+  (interactive
+   (list (read-file-name "Choose a directory: " nil nil t nil 'file-directory-p)))
+   (let ((aidermacs-subtree-only t)
+         (default-directory directory))
     (aidermacs-run)))
 
 (defun aidermacs--command-may-edit-files (command)
