@@ -163,7 +163,7 @@ Uses cached version if available to avoid repeated process calls."
         (setq aidermacs--cached-version
               (with-temp-buffer
                 (setq-local exec-path path)
-                (when (= 0 (call-process aidermacs-program nil t nil "--version"))
+                (when (= 0 (process-file aidermacs-program nil t nil "--version"))
                   (goto-char (point-min))
                   (when (re-search-forward "aider \\([0-9]+\\.[0-9]+\\.[0-9]+\\)" nil t)
                     (match-string 1)))))))
