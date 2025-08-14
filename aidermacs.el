@@ -195,7 +195,11 @@ This is the file name without path."
   "AI Pair Programming Interface."
   ["Aidermacs: AI Pair Programming"
    ["Core"
-    ("a" "Start/Open Session" aidermacs-run)
+    ("a" (lambda ()
+           (if (aidermacs--live-p (aidermacs-get-buffer-name))
+               (concat "Open Session " (propertize "(RUNNING)" 'face 'success))
+             (concat "Start Session " (propertize "(NOT RUNNING)" 'face 'warning))))
+     aidermacs-run)
     ("." "Start in Current Dir" aidermacs-run-in-current-dir)
     (":" "Start in Chosen Dir" aidermacs-run-in-directory)
     ("l" "Clear Chat History" aidermacs-clear-chat-history)
