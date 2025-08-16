@@ -60,12 +60,14 @@ of using a comint process."
 PROGRAM is the aidermacs executable path.  ARGS are command line arguments.
 BUFFER-NAME is the name for the aidermacs buffer."
   (message "Running %s with %s" program args)
-  (run-hooks 'aidermacs-before-run-backend-hook)
-  (cond
-   ((eq aidermacs-backend 'vterm)
-    (aidermacs-run-vterm program args buffer-name))
-   (t
-    (aidermacs-run-comint program args buffer-name))))
+  ;; make a copy of process-environment, so that secrets set in the hook is only visible by aider
+  (let ((process-environment process-environment))
+    (run-hooks 'aidermacs-before-run-backend-hook)
+    (cond
+     ((eq aidermacs-backend 'vterm)
+      (aidermacs-run-vterm program args buffer-name))
+     (t
+      (aidermacs-run-comint program args buffer-name)))))
 
 (defun aidermacs--is-aidermacs-buffer-p (&optional buffer)
   "Check if BUFFER is any type of aidermacs buffer.
