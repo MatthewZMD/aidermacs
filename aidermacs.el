@@ -94,7 +94,7 @@ ignoring other configuration settings except `aidermacs-extra-args'."
 (define-obsolete-variable-alias 'aidermacs-args 'aidermacs-extra-args "0.5.0"
   "Old name for `aidermacs-extra-args', please update your config.")
 
-(defcustom aidermacs-extra-args '()
+(defcustom aidermacs-extra-args '("--no-check-update" "--no-show-release-notes")
   "Additional arguments to pass to the aidermacs command."
   :type '(repeat string))
 
