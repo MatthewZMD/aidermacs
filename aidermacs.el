@@ -478,9 +478,11 @@ If CALLBACK is non-nil it will be called after the command finishes."
          (processed-command (aidermacs--process-message-if-multi-line command)))
     ;; Check if command may edit files and prepare accordingly
     (with-current-buffer buffer
-      ;; Attempt to wait out transient commands or server lag
-      (when (not aidermacs--ready)
-        (sit-for 0.5))
+      ;; Attempt to wait out transient commands or server lag for max 3s
+      (let ((max-wait-count 30))
+        (while (and (not aidermacs--ready) (> max-wait-count 0))
+          (sit-for 0.1)
+          (setq max-wait-count (1- max-wait-count))))
       (if (not aidermacs--ready)
           (progn (aidermacs-switch-to-buffer buffer-name)
                  (message "Aider process is not currently accepting commands"))
