@@ -87,7 +87,8 @@ Instead, set `aidermacs-default-chat-mode' to the symbol `architect'."
 (defcustom aidermacs-config-file nil
   "Path to aider configuration file.
 When set, Aidermacs will pass this to aider via --config flag,
-ignoring other configuration settings except `aidermacs-extra-args'."
+ignoring other configuration settings except `aidermacs-extra-args'
+and `aidermacs-subtree-only' (see its documentation for details)."
   :type '(choice (const :tag "None" nil)
           (file :tag "Config file")))
 
@@ -111,7 +112,15 @@ is for files that exist relative to the project root."
 
 (defcustom aidermacs-subtree-only nil
   "When non-nil, run aider with --subtree-only in the current directory.
-This is useful for working in monorepos where you want to limit aider's scope."
+This is useful for working in monorepos where you want to limit aider's scope.
+
+Unlike other configuration settings, this flag is applied even when
+`aidermacs-config-file' is set.  However, if subtree-only is already set to
+true in that configuration file, it will take precedence, because aider does
+not support --no-subtree-only on the command line.  For this reason, avoid
+setting subtree-only in the configuration file; instead, choose the desired
+behavior by invoking `aidermacs-run', `aidermacs-run-in-current-dir', or
+`aidermacs-run-in-directory' as appropriate."
   :type 'boolean)
 
 (defcustom aidermacs-auto-commits nil
@@ -412,8 +421,6 @@ set `aidermacs-default-chat-mode' to 'architect' instead."
                ;; Add weak model if specified
                (when aidermacs-weak-model
                  (list "--weak-model" aidermacs-weak-model))
-               (when aidermacs-subtree-only
-                 '("--subtree-only"))
                (when aidermacs-global-read-only-files
                  (apply #'append
                         (mapcar (lambda (file) (list "--read" file))
@@ -424,7 +431,10 @@ set `aidermacs-default-chat-mode' to 'architect' instead."
                                                      (expand-file-name file (aidermacs-project-root))))
                                 aidermacs-project-read-only-files))))))
            ;; Take the original aidermacs-extra-args instead of the flat ones
-           (final-args (append backend-args aidermacs-extra-args)))
+           (final-args (append backend-args
+                               (when aidermacs-subtree-only
+                                 '("--subtree-only"))
+                               aidermacs-extra-args)))
       (if (aidermacs--live-p buffer-name)
           (aidermacs-switch-to-buffer buffer-name)
         (aidermacs-run-backend aidermacs-program final-args buffer-name)
