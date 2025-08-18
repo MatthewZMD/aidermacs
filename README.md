@@ -199,7 +199,7 @@ Example usage to securely set an OpenAI API key from password-store:
             (setenv "OPENAI_API_KEY" (password-store-get "code/openai_api_key"))))
 ```
 
-The environment variable set in the hook would only be visible to aider process. This approach keeps sensitive information out of your dotfiles while still making it available to Aidermacs.
+An copy of `process-environment` is used when running the hook and starting Aider, ensuring environment variables set in the hook only affect the Aider backend. This approach keeps sensitive information out of your dotfiles while still making it available to Aidermacs.
 
 ### Default Model Selection
 
