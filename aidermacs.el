@@ -67,10 +67,10 @@ nil / 'code  – start in code mode (no --chat-mode arg)
 'architect   – start in architect mode  (--chat-mode architect + model flags)
 'help        – start in help mode       (--chat-mode help)."
   :type '(choice (const :tag "Code (default)" nil)
-                 (const :tag "Code"       code)
-                 (const :tag "Ask"        ask)
-                 (const :tag "Architect"  architect)
-                 (const :tag "Help"       help)))
+          (const :tag "Code"       code)
+          (const :tag "Ask"        ask)
+          (const :tag "Architect"  architect)
+          (const :tag "Help"       help)))
 
 ;; DEPRECATED – will disappear in a future release
 (defcustom aidermacs-use-architect-mode nil
@@ -455,8 +455,8 @@ This is useful for working in monorepos where you want to limit aider's scope."
 This is useful for working in complex monorepos with nested subprojects."
   (interactive
    (list (read-file-name "Choose a directory: " nil nil t nil 'file-directory-p)))
-   (let ((aidermacs-subtree-only t)
-         (default-directory directory))
+  (let ((aidermacs-subtree-only t)
+        (default-directory directory))
     (aidermacs-run)))
 
 (defun aidermacs--command-may-edit-files (command)
@@ -764,6 +764,7 @@ If a region is active, include the region text in the question.
 If cursor is inside a function, include the function name as context.
 If called from the aidermacs buffer, use general question instead."
   (interactive)
+  (aidermacs--set-code-change-region)
   (when-let* ((command (aidermacs--form-prompt "/ask" "Propose a solution" "won't edit file")))
     (aidermacs--ensure-current-file-tracked)
     (aidermacs--send-command command)))
@@ -773,6 +774,7 @@ If called from the aidermacs buffer, use general question instead."
 If region is active, inspect that region.
 If point is in a function, inspect that function."
   (interactive)
+  (aidermacs--set-code-change-region)
   (when-let* ((command (aidermacs--form-prompt "/architect" "Design a solution" "confirm before edit")))
     (aidermacs--ensure-current-file-tracked)
     (aidermacs--send-command command)))
