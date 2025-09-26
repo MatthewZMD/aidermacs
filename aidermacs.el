@@ -730,9 +730,40 @@ Use highlighted region as context unless IGNORE-CONTEXT is set to non-nil."
             (unless (string-empty-p user-command)
               (concat ": " user-command)))))
 
+(defun aidermacs--detect-code-change-region ()
+  "Select the underlying region based on indentation (prog-mode) or paragraph.
+Returns a cons cell (START . END) of the detected region, or nil if no region found."
+  (save-excursion
+    (if (derived-mode-p 'prog-mode)
+        ;; In programming modes, select based on indentation
+        (let ((start (point))
+              (end (point))
+              (current-indent (current-indentation)))
+          ;; TODO: Use built-in functions for indentation-based selection
+          ;; Consider using `beginning-of-defun', `end-of-defun', or similar
+          ;; For now, return current line as fallback
+          (beginning-of-line)
+          (setq start (point))
+          (end-of-line)
+          (setq end (point))
+          (cons start end))
+      ;; In non-programming modes, select paragraph
+      (let ((start (point))
+            (end (point)))
+        (backward-paragraph)
+        (setq start (point))
+        (forward-paragraph)
+        (setq end (point))
+        (cons start end)))))
+
 (defun aidermacs-direct-change ()
-  "Prompt the user for an input and send it to aidermacs prefixed with \"/code \"."
+  "Prompt the user for an input and send it to aidermacs prefixed with \"/code \".
+If no region is active, automatically detect and select a relevant region."
   (interactive)
+  (unless (use-region-p)
+    (when-let ((region (aidermacs--detect-code-change-region)))
+      (goto-char (car region))
+      (set-mark (cdr region))))
   (when-let* ((command (aidermacs--form-prompt "/code" "Make this change" "will edit file")))
     (aidermacs--ensure-current-file-tracked)
     (aidermacs--send-command command)))
