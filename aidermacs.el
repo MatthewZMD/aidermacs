@@ -175,8 +175,8 @@ Uses cached version if available to avoid repeated process calls."
                 (when (= 0 (process-file aidermacs-program nil t nil "--version"))
                   (goto-char (point-min))
                   (when (re-search-forward
-                         (concat aidermacs-program " \\([0-9]+\\.[0-9]+\\.[0-9]+\\)") nil t)
-                    (match-string 1)))))))
+                         "\\([0-9]+\\.[0-9]+\\.[0-9]+\\)" nil t)
+                    (match-string 0)))))))
   (message "Aider version %s" aidermacs--cached-version)
   aidermacs--cached-version)
 
