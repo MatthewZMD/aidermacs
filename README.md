@@ -494,9 +494,9 @@ When an Aidermacs session starts, it determines which settings to use based on t
 
 **To avoid conflicts:** When using a `.aider.conf.yml` file, you should define all your settings within that file. Do not set variables like `aidermacs-default-model` in Emacs or pass arguments like `--model` in `aidermacs-extra-args`, as they will be ignored and can cause confusion.
 
-### Claude 3.7 Sonnet Thinking Tokens
+### Claude Sonnet 3.7, 4, 4.5 Thinking Tokens
 
-Aider can work with Sonnet 3.7's [new thinking tokens](https://www.anthropic.com/news/claude-3-7-sonnet). You can now enable and configure thinking tokens more easily using the following methods:
+Aider can work with Sonnet 3.7's [new thinking tokens](https://www.anthropic.com/news/claude-3-7-sonnet) and newer models in this series. You can now enable and configure thinking tokens more easily using the following methods:
 
 1.  **In-Chat Command:** Use the `/think-tokens` command followed by the desired token budget. For example: `/think-tokens 8k` or `/think-tokens 10000`. Supported formats include `8096`, `8k`, `10.5k`, and `0.5M`.
 
