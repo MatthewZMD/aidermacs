@@ -132,6 +132,20 @@ Each entry maps a base URL to a configuration alist with:
 - models-key: JSON key containing the models list
 - model-name-transform: Optional function to transform model names")
 
+(defun aidermacs--format-price (pricing)
+  "Format pricing information into a string.
+PRICING is an alist that may contain 'prompt' and 'completion' prices."
+  (when pricing
+    (let* ((prompt-price-str (alist-get 'prompt pricing "0"))
+           (completion-price-str (alist-get 'completion pricing "0"))
+           (prompt-price (ignore-errors (string-to-number prompt-price-str)))
+           (completion-price (ignore-errors (string-to-number completion-price-str))))
+      (if (and prompt-price completion-price (> (+ prompt-price completion-price) 0))
+          (format "($%.2f/$%.2f/M)"
+                  (* prompt-price 1000000)
+                  (* completion-price 1000000))
+        ""))))
+
 (defun aidermacs--fetch-openai-compatible-models (url token)
   "Fetch available models from an OpenAI compatible API endpoint.
 URL should be the base API endpoint, e.g. https://api.openai.com/v1.
@@ -166,12 +180,15 @@ API provider."
                (json-data (json-read))
                (models (alist-get models-key json-data)))
           (mapcar (lambda (model)
-                    (concat prefix "/"
+                    (let* ((model-id
                             (cond
-                             (transform-fn (funcall transform-fn (alist-get 'name model)))
                              ((stringp model) model)
-                             (t (or (alist-get 'id model)
-                                    (alist-get 'name model))))))
+                             (transform-fn (funcall transform-fn (alist-get 'name model)))
+                             (t (or (alist-get 'id model) (alist-get 'name model)))))
+                           (full-model-id (concat prefix "/" model-id))
+                           (pricing (unless (stringp model) (alist-get 'pricing model)))
+                           (price-str (aidermacs--format-price pricing)))
+                      `((id . ,full-model-id) (price-str . ,price-str))))
                   models))))))
 
 (defun aidermacs--select-model (&optional set-weak-model)
@@ -191,7 +208,15 @@ When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
                  '("Main/Reasoning Model" "Editing Model")
                  nil nil))
                (t "Main Model")))
-             (model (completing-read (format "Select %s: " model-type) aidermacs--cached-models nil nil)))
+             (candidates (mapcar (lambda (m)
+                                   (let ((id (alist-get 'id m))
+                                         (price (alist-get 'price-str m)))
+                                     (cons (if (string-empty-p price)
+                                               id
+                                             (format "%-60s %s" id price))
+                                           id)))
+                                 aidermacs--cached-models))
+             (model (completing-read (format "Select %s: " model-type) candidates nil nil)))
         (when model
           (cond
            (set-weak-model
@@ -232,14 +257,15 @@ When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
              (condition-case err
                  (let* ((fetched-models (aidermacs--fetch-openai-compatible-models url token-value))
                         (filtered-models (seq-filter (lambda (model)
-                                                       (member model all-models))
+                                                       (member (alist-get 'id model) all-models))
                                                      fetched-models)))
                    (setq models (append models filtered-models)))
                (error "Failed to fetch models from %s: %s" url (error-message-string err))))))
        ;; If we couldn't fetch any models from APIs, just use all supported models list
        (if models
            (setq aidermacs--cached-models models)
-         (setq aidermacs--cached-models all-models))))))
+         (setq aidermacs--cached-models
+               (mapcar (lambda (m) `((id . ,m) (price-str . ""))) all-models)))))))
 
 (defun aidermacs-clear-model-cache ()
   "Clear the cached models, forcing a fresh fetch on next use.
