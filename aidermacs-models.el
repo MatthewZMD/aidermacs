@@ -216,23 +216,25 @@ When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
                                              (format "%-60s %s" id price))
                                            id)))
                                  aidermacs--cached-models))
-             (model (completing-read (format "Select %s: " model-type) candidates nil nil)))
+             (model (completing-read (format "Select %s: " model-type) candidates nil t)))
         (when model
-          (cond
-           (set-weak-model
-            (setq aidermacs-weak-model model)
-            (aidermacs--send-command (format "/weak-model %s" model)))
-           ((and is-architect-mode supports-specific-model)
-            (pcase model-type
-              ("Main/Reasoning Model"
-               (setq aidermacs-architect-model model)
-               (aidermacs--send-command (format "/model %s" model)))
-              ("Editing Model"
-               (setq aidermacs-editor-model model)
-               (aidermacs--send-command (format "/editor-model %s" model)))))
-           (t
-            (setq aidermacs-default-model model)
-            (aidermacs--send-command (format "/model %s" model))))))
+          (let ((real-model (cdr (assoc model candidates))))
+            (when real-model
+              (cond
+               (set-weak-model
+                (setq aidermacs-weak-model real-model)
+                (aidermacs--send-command (format "/weak-model %s" real-model)))
+               ((and is-architect-mode supports-specific-model)
+                (pcase model-type
+                  ("Main/Reasoning Model"
+                   (setq aidermacs-architect-model real-model)
+                   (aidermacs--send-command (format "/model %s" real-model)))
+                  ("Editing Model"
+                   (setq aidermacs-editor-model real-model)
+                   (aidermacs--send-command (format "/editor-model %s" real-model)))))
+               (t
+                (setq aidermacs-default-model real-model)
+                (aidermacs--send-command (format "/model %s" real-model))))))))
     (quit (message "Model selection cancelled"))))
 
 (defun aidermacs--get-available-models ()
