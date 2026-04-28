@@ -191,6 +191,42 @@ API provider."
                       `((id . ,full-model-id) (price-str . ,price-str))))
                   models))))))
 
+(defun aidermacs--model-total-price (model)
+  "Calculate total price for MODEL from pricing info.
+Returns a number, or 999999 if price cannot be determined."
+  (let* ((pricing (alist-get 'pricing model))
+         (prompt-price (ignore-errors (string-to-number (alist-get 'prompt pricing "0"))))
+         (completion-price (ignore-errors (string-to-number (alist-get 'completion pricing "0"))))
+         (price-str (alist-get 'price-str model)))
+    (cond
+     ((and prompt-price completion-price (> (+ prompt-price completion-price) 0))
+      (+ prompt-price completion-price))
+     ((and price-str (string-match "($\\([0-9.]+\\)/$\\([0-9.]+\\)/M)" price-str))
+      (+ (string-to-number (match-string 1 price-str))
+         (string-to-number (match-string 2 price-str))))
+     (t 999999))))
+
+(defun aidermacs--get-cheapest-models (models count)
+  "Return the cheapest COUNT models from MODELS.
+Returns a list of (model . rank) cons cells, where rank starts from 1."
+  (let* ((models-with-price (mapcar (lambda (m) (cons m (aidermacs--model-total-price m))) models))
+         (sorted (sort (copy-sequence models-with-price) (lambda (a b) (< (cdr a) (cdr b)))))
+         (top-n (seq-take sorted count)))
+    (cl-loop for idx from 1 to (min count (length top-n))
+             for item in top-n
+             collect (cons (car item) idx))))
+
+(defun aidermacs--make-model-annotator (cheapest-models)
+  "Create annotation function for the cheapest models.
+CHEAPEST-MODELS is a list of (model . rank) from `aidermacs--get-cheapest-models'."
+  (let ((rank-map (make-hash-table :test 'equal))
+        (ids (mapcar (lambda (pair) (alist-get 'id (car pair))) cheapest-models)))
+    (dolist (entry cheapest-models)
+      (puthash (alist-get 'id (car entry)) (cdr entry) rank-map))
+    (lambda (cand-id)
+      (when-let ((rank (gethash cand-id rank-map)))
+        (format " [Rank %d - Cheapest]" rank)))))
+
 (defun aidermacs--select-model (&optional set-weak-model)
   "Provide model selection with completion, handling main/weak/editor models.
 When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
@@ -208,15 +244,24 @@ When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
                  '("Main/Reasoning Model" "Editing Model")
                  nil nil))
                (t "Main Model")))
-             (candidates (mapcar (lambda (m)
-                                   (let ((id (alist-get 'id m))
-                                         (price (alist-get 'price-str m)))
-                                     (cons (if (string-empty-p price)
-                                               id
-                                             (format "%-60s %s" id price))
-                                           id)))
-                                 aidermacs--cached-models))
-             (model (completing-read (format "Select %s: " model-type) candidates nil t)))
+             (cheapest-10 (aidermacs--get-cheapest-models aidermacs--cached-models 10))
+             (annotator (aidermacs--make-model-annotator cheapest-10))
+             (candidates
+              (mapcar (lambda (m)
+                        (let* ((id (alist-get 'id m))
+                               (price-str (alist-get 'price-str m))
+                               (display-str (if (string-empty-p price-str)
+                                                id
+                                              (format "%-60s %s" id price-str))))
+                          (cons display-str id)))
+                      aidermacs--cached-models))
+             (model (completing-read
+                     (format "Select %s: " model-type)
+                     (lambda (str pred action)
+                       (if (eq action 'metadata)
+                           `(metadata (annotation-function . ,(lambda (cand) (funcall annotator (cdr (assoc cand candidates))))))
+                         (complete-with-action action candidates str pred)))
+                     nil t)))
         (when model
           (let ((real-model (cdr (assoc model candidates))))
             (when real-model
