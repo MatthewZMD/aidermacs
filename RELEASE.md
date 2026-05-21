@@ -1,5 +1,18 @@
 # RELEASE
 
+# Aidermacs 1.7
+
+## What's Changed
+* Add model ranking by price in selection UI by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/181
+* Improve tramp support and per-workspace cache variables by @skittishdev in https://github.com/MatthewZMD/aidermacs/pull/175
+* feat: add --linear-output option for Aider-CE in aidermacs-run by @MatthewZMD in https://github.com/MatthewZMD/aidermacs/pull/184
+
+## New Contributors
+* @skittishdev made their first contribution in https://github.com/MatthewZMD/aidermacs/pull/175
+
+**Full Changelog**: https://github.com/MatthewZMD/aidermacs/compare/v1.6...v1.7
+
+
 # Aidermacs 1.6
 
 ## What's Changed
