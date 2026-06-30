@@ -67,6 +67,125 @@ Respects the `AIDER_WEAK_MODEL' environment variable if set."
   :type '(choice (const :tag "Use default model" nil)
                  (string :tag "Specific model")))
 
+(defcustom aidermacs-litellm-prices-file nil
+  "Manual path to litellm model_prices_and_context_window.json.
+If set, use this path directly instead of searching.
+Example: \"~/.local/lib/python3.11/site-packages/litellm/model_prices_and_context_window.json\""
+  :type '(choice (const :tag "Auto-detect" nil)
+                 (file :tag "Specify path"))
+  :group 'aidermacs-models)
+
+(defcustom aidermacs-litellm-prices-cache-duration 86400
+  "Duration in seconds to cache litellm prices (default: 1 day)."
+  :type 'integer
+  :group 'aidermacs-models)
+
+(defvar aidermacs--litellm-prices-cache nil
+  "Cache of litellm model prices. Alist mapping model-id to ((input-price . val) (output-price . val)).")
+
+(defvar aidermacs--litellm-prices-cache-timestamp nil
+  "Timestamp when litellm prices were last fetched.")
+
+(defvar aidermacs--litellm-file-path-cache nil
+  "Cache of the litellm prices file path.")
+
+(defun aidermacs--find-litellm-prices-file ()
+  "Find the local litellm prices file from Aider's installation."
+  (or aidermacs--litellm-file-path-cache
+      (when aidermacs-litellm-prices-file
+        (let ((expanded (expand-file-name aidermacs-litellm-prices-file)))
+          (when (file-exists-p expanded)
+            (message "Using user-specified litellm prices file: %s" expanded)
+            (setq aidermacs--litellm-file-path-cache expanded))))
+      (let ((possible-patterns
+             (append
+              ;; Aider-specific paths
+              '("~/.aider/caches/model_prices_and_context_window.json"
+                "~/.aider/caches/litellm/model_prices_and_context_window.json"
+                "~/.aider/lib/python*/site-packages/litellm/model_prices_and_context_window.json")
+              ;; User-local and system-wide pip
+              '("~/.local/lib/python*/site-packages/litellm/model_prices_and_context_window.json"
+                "/usr/lib/python*/site-packages/litellm/model_prices_and_context_window.json"
+                "/usr/local/lib/python*/site-packages/litellm/model_prices_and_context_window.json")
+              ;; macOS Homebrew
+              '("/opt/homebrew/lib/python*/site-packages/litellm/model_prices_and_context_window.json"
+                "/usr/local/opt/python*/libexec/lib/python*/site-packages/litellm/model_prices_and_context_window.json")
+              ;; Pip cache
+              '("~/.cache/pip/wheels/*/litellm-*/litellm/model_prices_and_context_window.json"
+                "~/.cache/pip/pool/*/litellm-*/litellm/model_prices_and_context_window.json"
+                "~/.cache/pip/*/litellm*/model_prices_and_context_window.json")
+              ;; Python version managers
+              '("~/.pyenv/versions/*/lib/python*/site-packages/litellm/model_prices_and_context_window.json"
+                "~/.asdf/installs/python/*/lib/python*/site-packages/litellm/model_prices_and_context_window.json")
+              ;; Conda/Anaconda
+              '("~/anaconda3/lib/python*/site-packages/litellm/model_prices_and_context_window.json"
+                "~/miniconda3/lib/python*/site-packages/litellm/model_prices_and_context_window.json"
+                "~/.conda/envs/*/lib/python*/site-packages/litellm/model_prices_and_context_window.json"
+                "~/mambaforge/lib/python*/site-packages/litellm/model_prices_and_context_window.json")
+              ;; macOS user Python
+              '("~/Library/Python/*/lib/python*/site-packages/litellm/model_prices_and_context_window.json")
+              ;; Virtual environments
+              '("~/.virtualenvs/*/lib/python*/site-packages/litellm/model_prices_and_context_window.json"
+                "~/venv/*/lib/python*/site-packages/litellm/model_prices_and_context_window.json"
+                "*/venv/lib/python*/site-packages/litellm/model_prices_and_context_window.json"
+                "*/.venv/lib/python*/site-packages/litellm/model_prices_and_context_window.json"
+                ".venv/lib/python*/site-packages/litellm/model_prices_and_context_window.json"
+                "venv/lib/python*/site-packages/litellm/model_prices_and_context_window.json"))))
+        (setq aidermacs--litellm-file-path-cache
+              (cl-some (lambda (pattern)
+                         (let ((matches (file-expand-wildcards pattern t)))
+                           (when matches
+                             (car matches))))
+                       possible-patterns))
+        (unless aidermacs--litellm-file-path-cache
+          (message "Could not find litellm prices file. Set `aidermacs-litellm-prices-file' manually"))
+        aidermacs--litellm-file-path-cache)))
+
+(defun aidermacs--read-litellm-prices ()
+  "Read model prices from local litellm JSON file."
+  (condition-case err
+      (let ((file-path (aidermacs--find-litellm-prices-file)))
+        (when file-path
+          (with-temp-buffer
+            (insert-file-contents file-path)
+            (let ((json-object-type 'alist)
+                  (json-data (json-read)))
+              (delq nil
+                    (mapcar (lambda (entry)
+                              (when (consp entry)
+                                (let* ((model-id (format "%s" (car entry)))
+                                       (info (cdr entry))
+                                       ;; Handle both symbol and string keys
+                                       (input-price (or (alist-get 'input_cost_per_token info)
+                                                       (alist-get "input_cost_per_token" info)))
+                                       (output-price (or (alist-get 'output_cost_per_token info)
+                                                        (alist-get "output_cost_per_token" info))))
+                                  ;; Only keep entries with pricing information
+                                  (when (and model-id (or input-price output-price))
+                                    (cons model-id
+                                          `((input-price . ,input-price)
+                                            (output-price . ,output-price)))))))
+                            (cl-remove-if (lambda (entry)
+                                           (and (consp entry)
+                                                (member (car entry) '(sample_spec "sample_spec"))))
+                                          json-data)))))))
+    (error
+     (message "Failed to read litellm prices: %s" (error-message-string err))
+     nil)))
+
+(defun aidermacs--get-litellm-prices ()
+  "Get litellm prices, using cache if still valid."
+  (if (and aidermacs--litellm-prices-cache
+           aidermacs--litellm-prices-cache-timestamp
+           (< (- (float-time) aidermacs--litellm-prices-cache-timestamp)
+              aidermacs-litellm-prices-cache-duration))
+      aidermacs--litellm-prices-cache
+    (let ((prices (aidermacs--read-litellm-prices)))
+      (when prices
+        (setq aidermacs--litellm-prices-cache prices)
+        (setq aidermacs--litellm-prices-cache-timestamp (float-time)))
+      prices)))
+
 (defvar aidermacs--cached-models nil
   "Cache of available AI models.")
 
@@ -82,129 +201,15 @@ Respects the `AIDER_WEAK_MODEL' environment variable if set."
   "Get the effective weak model, falling back to default if not set."
   (or aidermacs-weak-model aidermacs-default-model))
 
-(defconst aidermacs--api-providers
-  '(("https://openrouter.ai/api/v1" . ((hostname . "openrouter.ai")
-                                       (prefix . "openrouter")
-                                       (env-var . "OPENROUTER_API_KEY")
-                                       (auth-header . (("Authorization" . "Bearer %s")))
-                                       (models-path . "/models")
-                                       (models-key . data)))
-    ("https://api.openai.com/v1" . ((hostname . "api.openai.com")
-                                    (prefix . "openai")
-                                    (env-var . "OPENAI_API_KEY")
-                                    (auth-header . (("Authorization" . "Bearer %s")))
-                                    (models-path . "/models")
-                                    (models-key . data)))
-    ("https://api.deepseek.com" . ((hostname . "api.deepseek.com")
-                                   (prefix . "deepseek")
-                                   (env-var . "DEEPSEEK_API_KEY")
-                                   (auth-header . (("Authorization" . "Bearer %s")))
-                                   (models-path . "/models")
-                                   (models-key . data)))
-    ("https://api.anthropic.com/v1" . ((hostname . "api.anthropic.com")
-                                       (prefix . "anthropic")
-                                       (env-var . "ANTHROPIC_API_KEY")
-                                       (auth-header . (("x-api-key" . "%s")
-                                                       ("anthropic-version" . "2023-06-01")))
-                                       (models-path . "/models")
-                                       (models-key . data)))
-    ("https://generativelanguage.googleapis.com/v1beta" . ((hostname . "generativelanguage.googleapis.com")
-                                                           (prefix . "gemini")
-                                                           (env-var . "GEMINI_API_KEY")
-                                                           (auth-header . nil)
-                                                           (models-path . "/models?key=%s")
-                                                           (models-key . models)
-                                                           (model-name-transform . (lambda (name)
-                                                                                     (replace-regexp-in-string "^models/" "" name)))))
-    ("https://api.x.ai/v1" . ((hostname . "api.x.ai")
-                              (prefix . "xai")
-                              (env-var . "XAI_API_KEY")
-                              (auth-header . (("Authorization" . "Bearer %s")))
-                              (models-path . "/models")
-                              (models-key . data))))
-  "Configuration for different API providers.
-Each entry maps a base URL to a configuration alist with:
-- hostname: The API hostname
-- prefix: Prefix to add to model names
-- env-var: Environment variable containing the API key
-- auth-header: Headers for authentication (nil if not needed)
-- models-path: Path to fetch models, with %s for token if needed
-- models-key: JSON key containing the models list
-- model-name-transform: Optional function to transform model names")
-
-(defun aidermacs--format-price (pricing)
-  "Format pricing information into a string.
-PRICING is an alist that may contain 'prompt' and 'completion' prices."
-  (when pricing
-    (let* ((prompt-price-str (alist-get 'prompt pricing "0"))
-           (completion-price-str (alist-get 'completion pricing "0"))
-           (prompt-price (ignore-errors (string-to-number prompt-price-str)))
-           (completion-price (ignore-errors (string-to-number completion-price-str))))
-      (if (and prompt-price completion-price (> (+ prompt-price completion-price) 0))
-          (format "($%.2f/$%.2f/M)"
-                  (* prompt-price 1000000)
-                  (* completion-price 1000000))
-        ""))))
-
-(defun aidermacs--fetch-openai-compatible-models (url token)
-  "Fetch available models from an OpenAI compatible API endpoint.
-URL should be the base API endpoint, e.g. https://api.openai.com/v1.
-TOKEN is the API token for authentication.
-Returns a list of model names with appropriate prefixes based on the
-API provider."
-  (let* ((provider-config (cdr (assoc url aidermacs--api-providers)))
-         (prefix (alist-get 'prefix provider-config))
-         (auth-headers (alist-get 'auth-header provider-config))
-         (models-path (alist-get 'models-path provider-config))
-         (models-key (alist-get 'models-key provider-config))
-         (transform-fn (alist-get 'model-name-transform provider-config)))
-
-    (unless provider-config
-      (error "Unknown API URL: %s" url))
-
-    (with-local-quit
-      (with-current-buffer
-          (let ((url-request-extra-headers
-                 (when auth-headers
-                   (mapcar (lambda (header)
-                             (cons (car header)
-                                   (format (cdr header) token)))
-                           auth-headers))))
-            (url-retrieve-synchronously
-             (concat url (if (string-match-p "%s" models-path)
-                             (format models-path token)
-                           models-path))))
-
-        (goto-char url-http-end-of-headers)
-        (let* ((json-object-type 'alist)
-               (json-data (json-read))
-               (models (alist-get models-key json-data)))
-          (mapcar (lambda (model)
-                    (let* ((model-id
-                            (cond
-                             ((stringp model) model)
-                             (transform-fn (funcall transform-fn (alist-get 'name model)))
-                             (t (or (alist-get 'id model) (alist-get 'name model)))))
-                           (full-model-id (concat prefix "/" model-id))
-                           (pricing (unless (stringp model) (alist-get 'pricing model)))
-                           (price-str (aidermacs--format-price pricing)))
-                      `((id . ,full-model-id) (price-str . ,price-str))))
-                  models))))))
 
 (defun aidermacs--model-total-price (model)
   "Calculate total price for MODEL from pricing info.
 Returns a number, or 999999 if price cannot be determined."
-  (let* ((pricing (alist-get 'pricing model))
-         (prompt-price (ignore-errors (string-to-number (alist-get 'prompt pricing "0"))))
-         (completion-price (ignore-errors (string-to-number (alist-get 'completion pricing "0"))))
-         (price-str (alist-get 'price-str model)))
-    (cond
-     ((and prompt-price completion-price (> (+ prompt-price completion-price) 0))
-      (+ prompt-price completion-price))
-     ((and price-str (string-match "($\\([0-9.]+\\)/$\\([0-9.]+\\)/M)" price-str))
-      (+ (string-to-number (match-string 1 price-str))
-         (string-to-number (match-string 2 price-str))))
-     (t 999999))))
+  (let* ((price-str (alist-get 'price-str model)))
+    (if (and price-str (string-match "($\\([0-9.]+\\)/$\\([0-9.]+\\)/M)" price-str))
+        (+ (string-to-number (match-string 1 price-str))
+           (string-to-number (match-string 2 price-str)))
+      999999)))
 
 (defun aidermacs--get-cheapest-models (models count)
   "Return the cheapest COUNT models from MODELS.
@@ -244,22 +249,26 @@ When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
                  '("Main/Reasoning Model" "Editing Model")
                  nil nil))
                (t "Main Model")))
-             (cheapest-10 (aidermacs--get-cheapest-models aidermacs--cached-models 10))
-             (annotator (aidermacs--make-model-annotator cheapest-10))
+             (annotator (aidermacs--make-model-annotator (aidermacs--get-cheapest-models aidermacs--cached-models 10)))
              (candidates
               (mapcar (lambda (m)
                         (let* ((id (alist-get 'id m))
+                               (id-str (if (stringp id) id (format "%s" id)))
                                (price-str (alist-get 'price-str m))
-                               (display-str (if (string-empty-p price-str)
-                                                id
-                                              (format "%-60s %s" id price-str))))
-                          (cons display-str id)))
+                               (price-str-safe (if (stringp price-str) price-str ""))
+                               (display-str (if (string-empty-p price-str-safe)
+                                                id-str
+                                              (format "%-80s %s" id-str price-str-safe))))
+                          (cons display-str id-str)))
                       aidermacs--cached-models))
              (model (completing-read
                      (format "Select %s: " model-type)
                      (lambda (str pred action)
                        (if (eq action 'metadata)
-                           `(metadata (annotation-function . ,(lambda (cand) (funcall annotator (cdr (assoc cand candidates))))))
+                           `(metadata
+                             (annotation-function . ,(lambda (cand) (funcall annotator (cdr (assoc cand candidates)))))
+                             (display-sort-function . identity)
+                             (cycle-sort-function . identity))
                          (complete-with-action action candidates str pred)))
                      nil t)))
         (when model
@@ -282,52 +291,149 @@ When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
                 (aidermacs--send-command (format "/model %s" real-model))))))))
     (quit (message "Model selection cancelled"))))
 
-(defun aidermacs--get-available-models ()
-  "Get list of models supported by aider using the /models command."
+(defun aidermacs--parse-model-identity (model-id)
+  "Parse MODEL-ID into canonical identity components.
+Returns an alist with keys: provider, family, variant, full-id.
+Examples:
+  \"openai/gpt-4o-2024-08-06\" -> ((provider . \"openai\") (family . \"gpt-4o\") ...)
+  \"claude-3-5-sonnet-20241022\" -> ((provider . nil) (family . \"claude-3-5-sonnet\") ...)"
+  (unless (stringp model-id)
+    (message "Warning: model-id is not a string: %S (type: %s)" model-id (type-of model-id))
+    (setq model-id (format "%s" model-id)))
+  (let* ((parts (split-string model-id "/"))
+         (has-provider (> (length parts) 1))
+         (provider (if has-provider (car parts) nil))
+         (base (if has-provider (mapconcat #'identity (cdr parts) "/") model-id))
+         ;; Extract variant (date or version suffix)
+         (variant (when (string-match "-\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\|-[0-9]\\{6,8\\}\\|-latest\\)$" base)
+                    (match-string 1 base)))
+         (family (if variant
+                     (substring base 0 (- (length base) (length variant)))
+                   base)))
+    `((provider . ,provider)
+      (family . ,family)
+      (variant . ,variant)
+      (full-id . ,model-id))))
+
+(defun aidermacs--match-model-price (model-id litellm-prices)
+  "Find price info for MODEL-ID from LITELLM-PRICES using cascade matching."
+  (unless (stringp model-id)
+    (message "Warning: aidermacs--match-model-price received non-string model-id: %S" model-id)
+    (setq model-id (format "%s" model-id)))
+  (when litellm-prices
+    (let ((identity (aidermacs--parse-model-identity model-id))
+          (result nil))
+      ;; Strategy 1: Exact match
+      (setq result (cdr (assoc model-id litellm-prices)))
+
+      ;; Strategy 2: Family match (strip provider)
+      (unless result
+        (let ((family (alist-get 'family identity)))
+          (when family
+            (setq result (cdr (assoc family litellm-prices))))))
+
+      ;; Strategy 3: Fuzzy family match
+      (unless result
+        (let ((target-family (alist-get 'family identity)))
+          (dolist (entry litellm-prices)
+            (when (not result)
+              (let ((entry-key (car entry)))
+                (when (stringp entry-key)
+                  (let ((entry-identity (aidermacs--parse-model-identity entry-key)))
+                    (when (and (string= target-family (alist-get 'family entry-identity))
+                               (or (null (alist-get 'provider identity))
+                                   (null (alist-get 'provider entry-identity))
+                                   (string= (alist-get 'provider identity)
+                                            (alist-get 'provider entry-identity))))
+                      (setq result (cdr entry))))))))))
+
+      ;; Strategy 4: Provider/family combination
+      (unless result
+        (let ((provider (alist-get 'provider identity))
+              (family (alist-get 'family identity)))
+          (when (and provider family)
+            (setq result (cdr (assoc (concat provider "/" family) litellm-prices))))))
+
+      ;; Strategy 5: Substring match
+      (unless result
+        (let ((family (alist-get 'family identity)))
+          (when family
+            (setq result (cdr (cl-find-if (lambda (entry)
+                                            (let ((entry-key (car entry)))
+                                              (and (stringp entry-key)
+                                                   (string-match-p (regexp-quote family) entry-key))))
+                                          litellm-prices))))))
+
+      result)))
+
+
+
+(defun aidermacs--get-available-models (&optional callback)
+  "Get list of models supported by aider using the /models command.
+Prices are fetched from local litellm JSON file with cascade matching.
+If API keys are configured, only show models from those providers.
+CALLBACK is called after models are fetched and cached."
   (aidermacs--send-command
    "/models /" nil nil t
    (lambda ()
-     (let* ((all-models
-             (mapcar (lambda (line)
-                       (substring line 2)) ; Remove "- " prefix
-                     (seq-filter
-                      (lambda (line)
-                        (string-prefix-p "- " line))
-                      (split-string aidermacs--current-output "\n" t))))
-            (models))
-       (dolist (provider-entry aidermacs--api-providers)
-         (let* ((url (car provider-entry))
-                (config (cdr provider-entry))
-                (env-var (alist-get 'env-var config))
-                (token-value (getenv env-var)))
-           (when (and token-value (not (string-empty-p token-value)))
-             (condition-case err
-                 (let* ((fetched-models (aidermacs--fetch-openai-compatible-models url token-value))
-                        (filtered-models (seq-filter (lambda (model)
-                                                       (member (alist-get 'id model) all-models))
-                                                     fetched-models)))
-                   (setq models (append models filtered-models)))
-               (error "Failed to fetch models from %s: %s" url (error-message-string err))))))
-       ;; If we couldn't fetch any models from APIs, just use all supported models list
-       (if models
-           (setq aidermacs--cached-models models)
-         (setq aidermacs--cached-models
-               (mapcar (lambda (m) `((id . ,m) (price-str . ""))) all-models)))))))
+     (if (not (stringp aidermacs--current-output))
+         (progn
+           (message "Error: aidermacs--current-output is not a string: %S (type: %s)"
+                    aidermacs--current-output (type-of aidermacs--current-output))
+           (setq aidermacs--cached-models nil)
+           (when callback (funcall callback)))
+       (let* ((all-models
+               (mapcar (lambda (line) (substring line 2))
+                       (seq-filter (lambda (line) (string-prefix-p "- " line))
+                                   (split-string aidermacs--current-output "\n" t))))
+              (all-models-str (mapcar (lambda (m) (if (stringp m) m (format "%s" m))) all-models))
+              (litellm-prices (aidermacs--get-litellm-prices))
+              (models))
+         (dolist (model-id all-models-str)
+           (when (stringp model-id)
+             (let* ((price-info (aidermacs--match-model-price model-id litellm-prices))
+                    (price-str (if price-info
+                                   (let ((input-price (alist-get 'input-price price-info))
+                                         (output-price (alist-get 'output-price price-info)))
+                                     (if (and input-price output-price
+                                              (numberp input-price) (numberp output-price)
+                                              (> (+ input-price output-price) 0))
+                                         (format "($%.2f/$%.2f/M)"
+                                                 (* input-price 1000000)
+                                                 (* output-price 1000000))
+                                       ""))
+                                 "")))
+               (push `((id . ,model-id) (price-str . ,price-str)) models))))
+
+         (let ((final-models (or (nreverse models)
+                               (mapcar (lambda (m)
+                                         (if (stringp m)
+                                             `((id . ,m) (price-str . ""))
+                                           `((id . ,(format "%s" m)) (price-str . ""))))
+                                       all-models-str))))
+           (setq aidermacs--cached-models final-models)
+           (when callback (funcall callback))))))))
 
 (defun aidermacs-clear-model-cache ()
-  "Clear the cached models, forcing a fresh fetch on next use.
-This is useful when available models have changed."
+  "Clear the cached models and litellm prices, forcing a fresh fetch on next use."
   (interactive)
   (setq aidermacs--cached-models nil)
+  (setq aidermacs--litellm-prices-cache nil)
+  (setq aidermacs--litellm-prices-cache-timestamp nil)
+  (setq aidermacs--litellm-file-path-cache nil)
   (message "Model cache cleared"))
 
 (defun aidermacs-change-model (&optional arg)
   "Interactively select and change AI model in current aidermacs session.
 With prefix ARG, only allow setting the weak model."
   (interactive "P")
-  (unless aidermacs--cached-models
-    (aidermacs--get-available-models))
-  (aidermacs--select-model arg))
+  (if aidermacs--cached-models
+      (aidermacs--select-model arg)
+    (message "Fetching available models...")
+    (aidermacs--get-available-models
+     (lambda ()
+       (message "Models fetched successfully")
+       (aidermacs--select-model arg)))))
 
 (provide 'aidermacs-models)
 ;;; aidermacs-models.el ends here
