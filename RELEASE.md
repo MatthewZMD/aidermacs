@@ -1,5 +1,13 @@
 # RELEASE
 
+# Aidermacs 1.8
+
+## What's Changed
+* Refactor model pricing to use local litellm data instead of API queries by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/200
+
+**Full Changelog**: https://github.com/MatthewZMD/aidermacs/compare/v1.7...v1.8
+
+
 # Aidermacs 1.7
 
 ## What's Changed
