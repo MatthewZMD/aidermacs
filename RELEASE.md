@@ -1,5 +1,19 @@
 # RELEASE
 
+# Aidermacs 1.10
+
+## What's Changed
+
+* Add command output analysis confirmation handling by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/208
+* Optimize comint backend for large inputs by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/209
+* Increase cheap models limit from 10 to 500 by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/210
+* Add spinner animation for command execution feedback by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/211
+* Add duplicate edit prevention and cleanup improvements by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/212
+* Filter out unchanged files from diff selection by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/212
+
+**Full Changelog**: https://github.com/MatthewZMD/aidermacs/compare/v1.9...v1.10
+
+
 # Aidermacs 1.9
 
 ## What's Changed
