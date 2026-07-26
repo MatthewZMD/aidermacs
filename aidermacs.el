@@ -261,12 +261,29 @@ system-specific commands."
          ((eq system-type 'darwin)
           (cond
            ((executable-find "alerter")
-            (let ((output-buffer ""))
+            (let* ((output-buffer "")
+                   (caller-buffer (current-buffer))
+                   (bufs (match-buffers #'aidermacs--is-aidermacs-buffer-p))
+                   (target-buffer (cond
+                                   ((aidermacs--is-aidermacs-buffer-p caller-buffer)
+                                    (buffer-name caller-buffer))
+                                   ((= 1 (length bufs))
+                                    (buffer-name (car bufs)))
+                                   ((> (length bufs) 1)
+                                    (let* ((current-root (file-truename (aidermacs-project-root)))
+                                           (matching (cl-find-if
+                                                      (lambda (buf)
+                                                        (string-match-p (regexp-quote current-root) (buffer-name buf)))
+                                                      bufs)))
+                                      (buffer-name (or matching (car bufs)))))))
+                   (display-message (if target-buffer
+                                        (format "%s [%s]" message target-buffer)
+                                      message)))
               (make-process
                :name "aidermacs-alerter"
                :command (list "alerter"
                               "--title" title
-                              "--message" message
+                              "--message" display-message
                               "--sound" "default"
                               "--actions" "Open Emacs"
                               "--group" "aidermacs"
@@ -285,7 +302,9 @@ system-specific commands."
                                    (when (and (string= activation-type "actionClicked")
                                               (string= activation-value "Open Emacs"))
                                      (unless (= 0 (call-process "open" nil nil nil "-b" "org.gnu.Emacs"))
-                                       (call-process "open" nil nil nil "-a" "Emacs"))))
+                                       (call-process "open" nil nil nil "-a" "Emacs"))
+                                     (when (and target-buffer (get-buffer target-buffer))
+                                       (run-with-timer 0.1 nil #'aidermacs-switch-to-buffer target-buffer))))
                                (error
                                 (message "Alerter JSON parse error: %s" err)))))
                :noquery t
