@@ -173,18 +173,97 @@ Example: \"~/.local/lib/python3.11/site-packages/litellm/model_prices_and_contex
      (message "Failed to read litellm prices: %s" (error-message-string err))
      nil)))
 
+(defun aidermacs--fetch-openrouter-prices ()
+  "Fetch model prices from OpenRouter API.
+Returns an alist of model-id to ((input-price . val) (output-price . val)).
+Model IDs are prefixed with \"openrouter/\"."
+  (condition-case err
+      (let* ((url-request-method "GET")
+             (url-request-extra-headers '(("Content-Type" . "application/json")))
+             (buf (url-retrieve-synchronously
+                   "https://openrouter.ai/api/v1/models"
+                   t nil 10))
+             response data result)
+        (unwind-protect
+            (with-current-buffer buf
+              (goto-char url-http-end-of-headers)
+              (let* ((json-object-type 'alist)
+                     (json-key-type 'string)
+                     (json-array-type 'list))
+                (setq response (json-read)))
+              (setq data (cdr (assoc "data" response)))
+              (dolist (model data)
+                (let* ((id (cdr (assoc "id" model)))
+                       (pricing (cdr (assoc "pricing" model)))
+                       (prompt (when pricing (cdr (assoc "prompt" pricing))))
+                       (completion (when pricing (cdr (assoc "completion" pricing)))))
+                  (when (and id prompt completion)
+                    (push (cons (concat "openrouter/" (if (stringp id) id (format "%s" id)))
+                                `((input-price . ,(if (stringp prompt) (string-to-number prompt) prompt))
+                                  (output-price . ,(if (stringp completion) (string-to-number completion) completion))))
+                          result))))
+              result)
+          (when (buffer-live-p buf)
+            (kill-buffer buf))))
+    (error
+     (message "Failed to fetch OpenRouter prices: %s" (error-message-string err))
+     nil)))
+
+(defun aidermacs--build-price-index (litellm-prices)
+  "Build fast lookup indexes from LITELLM-PRICES.
+Returns a list (exact-hash family-hash provider-family-hash)."
+  (let ((exact (make-hash-table :test 'equal :size (length litellm-prices)))
+        (family (make-hash-table :test 'equal))
+        (prov-fam (make-hash-table :test 'equal)))
+    (dolist (entry litellm-prices)
+      (let ((key (car entry))
+            (info (cdr entry)))
+        (when (stringp key)
+          (puthash key info exact)
+          (let* ((id (aidermacs--parse-model-identity key))
+                 (fam (alist-get 'family id))
+                 (prov (alist-get 'provider id)))
+            (when fam
+              (unless (gethash fam family)
+                (puthash fam info family))
+              (when prov
+                (puthash (concat prov "/" fam) info prov-fam)))))))
+    (list exact family prov-fam)))
+
+(defun aidermacs--match-model-price-fast (model-id index)
+  "Fast price lookup using prebuilt INDEX."
+  (when index
+    (let* ((identity (aidermacs--parse-model-identity model-id))
+           (exact (nth 0 index))
+           (family (nth 1 index))
+           (prov-fam (nth 2 index)))
+      (or (gethash model-id exact)
+          (gethash (alist-get 'family identity) family)
+          (let ((prov (alist-get 'provider identity))
+                (fam (alist-get 'family identity)))
+            (when (and prov fam)
+              (gethash (concat prov "/" fam) prov-fam)))))))
+
 (defun aidermacs--get-litellm-prices ()
-  "Get litellm prices, using cache if still valid."
+  "Get model prices from litellm and OpenRouter, using cache if still valid."
   (if (and aidermacs--litellm-prices-cache
            aidermacs--litellm-prices-cache-timestamp
            (< (- (float-time) aidermacs--litellm-prices-cache-timestamp)
               aidermacs-litellm-prices-cache-duration))
       aidermacs--litellm-prices-cache
-    (let ((prices (aidermacs--read-litellm-prices)))
-      (when prices
-        (setq aidermacs--litellm-prices-cache prices)
-        (setq aidermacs--litellm-prices-cache-timestamp (float-time)))
-      prices)))
+    (let ((litellm-prices (aidermacs--read-litellm-prices))
+          (openrouter-prices (aidermacs--fetch-openrouter-prices)))
+      ;; Merge: OpenRouter overrides litellm, new entries appended
+      (let ((merged (copy-sequence litellm-prices)))
+        (dolist (entry openrouter-prices)
+          (let ((existing (assoc (car entry) merged)))
+            (if existing
+                (setcdr existing (cdr entry))
+              (push entry merged))))
+        (when merged
+          (setq aidermacs--litellm-prices-cache merged)
+          (setq aidermacs--litellm-prices-cache-timestamp (float-time)))
+        merged))))
 
 (defvar aidermacs--cached-models nil
   "Cache of available AI models.")
@@ -315,57 +394,6 @@ Examples:
       (variant . ,variant)
       (full-id . ,model-id))))
 
-(defun aidermacs--match-model-price (model-id litellm-prices)
-  "Find price info for MODEL-ID from LITELLM-PRICES using cascade matching."
-  (unless (stringp model-id)
-    (message "Warning: aidermacs--match-model-price received non-string model-id: %S" model-id)
-    (setq model-id (format "%s" model-id)))
-  (when litellm-prices
-    (let ((identity (aidermacs--parse-model-identity model-id))
-          (result nil))
-      ;; Strategy 1: Exact match
-      (setq result (cdr (assoc model-id litellm-prices)))
-
-      ;; Strategy 2: Family match (strip provider)
-      (unless result
-        (let ((family (alist-get 'family identity)))
-          (when family
-            (setq result (cdr (assoc family litellm-prices))))))
-
-      ;; Strategy 3: Fuzzy family match
-      (unless result
-        (let ((target-family (alist-get 'family identity)))
-          (dolist (entry litellm-prices)
-            (when (not result)
-              (let ((entry-key (car entry)))
-                (when (stringp entry-key)
-                  (let ((entry-identity (aidermacs--parse-model-identity entry-key)))
-                    (when (and (string= target-family (alist-get 'family entry-identity))
-                               (or (null (alist-get 'provider identity))
-                                   (null (alist-get 'provider entry-identity))
-                                   (string= (alist-get 'provider identity)
-                                            (alist-get 'provider entry-identity))))
-                      (setq result (cdr entry))))))))))
-
-      ;; Strategy 4: Provider/family combination
-      (unless result
-        (let ((provider (alist-get 'provider identity))
-              (family (alist-get 'family identity)))
-          (when (and provider family)
-            (setq result (cdr (assoc (concat provider "/" family) litellm-prices))))))
-
-      ;; Strategy 5: Substring match
-      (unless result
-        (let ((family (alist-get 'family identity)))
-          (when family
-            (setq result (cdr (cl-find-if (lambda (entry)
-                                            (let ((entry-key (car entry)))
-                                              (and (stringp entry-key)
-                                                   (string-match-p (regexp-quote family) entry-key))))
-                                          litellm-prices))))))
-
-      result)))
-
 
 
 (defun aidermacs--get-available-models (&optional callback)
@@ -388,10 +416,16 @@ CALLBACK is called after models are fetched and cached."
                                    (split-string aidermacs--current-output "\n" t))))
               (all-models-str (mapcar (lambda (m) (if (stringp m) m (format "%s" m))) all-models))
               (litellm-prices (aidermacs--get-litellm-prices))
+              ;; Supplement with OpenRouter models from API
+              (openrouter-ids (mapcar #'car
+                                      (seq-filter (lambda (entry) (string-prefix-p "openrouter/" (car entry)))
+                                                  litellm-prices)))
+              (all-models-str (delete-dups (append all-models-str openrouter-ids)))
+              (price-index (aidermacs--build-price-index litellm-prices))
               (models))
          (dolist (model-id all-models-str)
            (when (stringp model-id)
-             (let* ((price-info (aidermacs--match-model-price model-id litellm-prices))
+             (let* ((price-info (aidermacs--match-model-price-fast model-id price-index))
                     (price-str (if price-info
                                    (let ((input-price (alist-get 'input-price price-info))
                                          (output-price (alist-get 'output-price price-info)))
