@@ -1,5 +1,15 @@
 # RELEASE
 
+# Aidermacs 1.11
+
+## What's Changed
+
+* Improve macOS notification with buffer context by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/214
+* Add OpenRouter price support and optimize model lookup by @OverbearingPearl in https://github.com/MatthewZMD/aidermacs/pull/215
+
+**Full Changelog**: https://github.com/MatthewZMD/aidermacs/compare/v1.10...v1.11
+
+
 # Aidermacs 1.10
 
 ## What's Changed
