@@ -31,6 +31,7 @@
 (declare-function aidermacs-exit "aidermacs")
 (declare-function aidermacs-aider-version "aidermacs")
 (declare-function aidermacs-get-buffer-name "aidermacs")
+(declare-function aidermacs-project-root "aidermacs")
 
 (defvar aidermacs--current-output)
 (defvar aidermacs-use-architect-mode)
@@ -70,7 +71,8 @@ Respects the `AIDER_WEAK_MODEL' environment variable if set."
 (defcustom aidermacs-litellm-prices-file nil
   "Manual path to litellm model_prices_and_context_window.json.
 If set, use this path directly instead of searching.
-Example: \"~/.local/lib/python3.11/site-packages/litellm/model_prices_and_context_window.json\""
+Example: \"~/.local/lib/python3.11/site-packages/litellm/\
+model_prices_and_context_window.json\""
   :type '(choice (const :tag "Auto-detect" nil)
                  (file :tag "Specify path"))
   :group 'aidermacs-models)
@@ -91,7 +93,8 @@ Example: \"~/.local/lib/python3.11/site-packages/litellm/model_prices_and_contex
   :group 'aidermacs-models)
 
 (defvar aidermacs--litellm-prices-cache nil
-  "Cache of litellm model prices. Alist mapping model-id to ((input-price . val) (output-price . val)).")
+  "Cache of litellm model prices.
+Alist mapping model-id to ((input-price . val) (output-price . val)).")
 
 (defvar aidermacs--litellm-prices-cache-timestamp nil
   "Timestamp when litellm prices were last fetched.")
@@ -280,7 +283,7 @@ Returns a list (exact-hash family-hash provider-family-hash)."
     (list exact family prov-fam)))
 
 (defun aidermacs--match-model-price-fast (model-id index)
-  "Fast price lookup using prebuilt INDEX."
+  "Fast price lookup for MODEL-ID using prebuilt INDEX."
   (when index
     (let* ((identity (aidermacs--parse-model-identity model-id))
            (exact (nth 0 index))
@@ -351,7 +354,8 @@ Returns a list of (model . rank) cons cells, where rank starts from 1."
 
 (defun aidermacs--make-model-annotator (cheapest-models configured-models)
   "Create annotation function for the cheapest models.
-CHEAPEST-MODELS is a list of (model . rank) from `aidermacs--get-cheapest-models'.
+CHEAPEST-MODELS is a list of (model . rank) from
+`aidermacs--get-cheapest-models'.
 CONFIGURED-MODELS is a list of model IDs that are user-configured."
   (let ((rank-map (make-hash-table :test 'equal))
         (configured-set (make-hash-table :test 'equal)))
@@ -465,8 +469,10 @@ When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
   "Parse MODEL-ID into canonical identity components.
 Returns an alist with keys: provider, family, variant, full-id.
 Examples:
-  \"openai/gpt-4o-2024-08-06\" -> ((provider . \"openai\") (family . \"gpt-4o\") ...)
-  \"claude-3-5-sonnet-20241022\" -> ((provider . nil) (family . \"claude-3-5-sonnet\") ...)"
+  \"openai/gpt-4o-2024-08-06\" ->
+    ((provider . \"openai\") (family . \"gpt-4o\") ...)
+  \"claude-3-5-sonnet-20241022\" ->
+    ((provider . nil) (family . \"claude-3-5-sonnet\") ...)"
   (unless (stringp model-id)
     (message "Warning: model-id is not a string: %S (type: %s)" model-id (type-of model-id))
     (setq model-id (format "%s" model-id)))

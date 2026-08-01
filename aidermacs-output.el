@@ -161,8 +161,8 @@ Kills all pre-edit buffers and resets the preparation flag."
 (defun aidermacs--prepare-for-code-edit ()
   "Prepare for code edits by capturing current file states in memory buffers.
 This is skipped if `aidermacs-show-diff-after-change' is nil.
-If called multiple times during the same edit cycle, subsequent calls are ignored
-until `aidermacs--cleanup-temp-buffers' is called."
+If called multiple times during the same edit cycle, subsequent calls are
+ignored until `aidermacs--cleanup-temp-buffers' is called."
   (when (and aidermacs-show-diff-after-change
              (not aidermacs--pre-edit-prepared))
     (aidermacs--cleanup-temp-buffers)
@@ -218,6 +218,7 @@ This function is called when an ediff session is quit."
       (set-window-configuration aidermacs--pre-ediff-window-config))))
 
 (defun aidermacs--ediff-cleanup-auxiliary-buffers ()
+  "Kill ediff's auxiliary buffers and restore the frame/window layout."
   (let* ((ctl-buf ediff-control-buffer)
          (ctl-win (ediff-get-visible-buffer-window ctl-buf))
          (ctl-frm ediff-control-frame)
@@ -455,19 +456,24 @@ This is skipped if `aidermacs-show-diff-after-change' is nil."
   (when (and aidermacs-show-diff-after-change edited-files)
     (aidermacs--show-file-selection-buffer edited-files)))
 
-(define-derived-mode aidermacs-file-diff-selection-mode special-mode "Aider Diff Files"
-  "Major mode for selecting files edited by Aider."
-  :group 'aidermacs
-  (font-lock-mode 1)
-  (setq buffer-read-only t))
-
 (defun aidermacs--file-diff-selection-quit ()
-  "Quit file selection"
+  "Quit file selection."
   (interactive)
   (kill-buffer)
   (aidermacs--cleanup-temp-buffers))
 
-(define-key aidermacs-file-diff-selection-mode-map (kbd "q") 'aidermacs--file-diff-selection-quit)
+(defvar aidermacs-file-diff-selection-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "q") #'aidermacs--file-diff-selection-quit)
+    map)
+  "Keymap used when `aidermacs-file-diff-selection-mode' is enabled.")
+
+(define-derived-mode aidermacs-file-diff-selection-mode special-mode "Aider Diff Files"
+  "Major mode for selecting files edited by Aider."
+  :group 'aidermacs
+  :keymap aidermacs-file-diff-selection-mode-map
+  (font-lock-mode 1)
+  (setq buffer-read-only t))
 
 (defun aidermacs--show-file-selection-buffer (files)
   "Display a buffer with a list of FILES that were edited.

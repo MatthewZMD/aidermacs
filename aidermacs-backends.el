@@ -66,13 +66,14 @@ Matches all confirmation prompts including:
 The (Y)es/(N)o pattern is the common denominator across all variants.
 
 Limitations of this permissive regexp:
-1. False positives: Any text containing \"(Y)es/(N)o\" will be treated as a prompt,
-   potentially triggering notifications prematurely. This includes:
+1. False positives: Any text containing \"(Y)es/(N)o\" will be treated as a
+   prompt, potentially triggering notifications prematurely. This includes:
    - User messages discussing confirmation prompts
    - AI responses containing the pattern as example text
    - Code snippets or documentation mentioning the pattern
 2. False positive probability: Moderate. The pattern is specific enough to avoid
-   most casual text, but technical discussions about aider's prompts may trigger it.
+   most casual text, but technical discussions about aider's prompts may
+   trigger it.
    In normal usage, false positives are infrequent but possible.
 3. No context awareness: The regexp doesn't check if the pattern appears at the
    end of a line (where prompts usually are) or is followed by \" [Yes]:\".

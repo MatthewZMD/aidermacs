@@ -104,16 +104,15 @@ It respects `aidermacs-program` which can be a string or a list of strings."
 Possible values: `code', `ask', `architect', `help'.")
 
 (defvar-local aidermacs--ready nil
-  "Buffer-local variable to track whether aider is ready to accept
-commands: `nil', `t'")
+  "Non-nil when aider is ready to accept new commands.")
 
 (defcustom aidermacs-default-chat-mode nil
   "Chat mode used when an Aidermacs session starts.
 
-nil / 'code  – start in code mode (no --chat-mode arg)
-'ask         – start in ask/chat mode   (--chat-mode ask)
-'architect   – start in architect mode  (--chat-mode architect + model flags)
-'help        – start in help mode       (--chat-mode help)."
+nil or `code' starts code mode (no --chat-mode arg).
+`ask' starts ask/chat mode (--chat-mode ask).
+`architect' starts architect mode (--chat-mode architect + model flags).
+`help' starts help mode (--chat-mode help)."
   :type '(choice (const :tag "Code (default)" nil)
           (const :tag "Code"       code)
           (const :tag "Ask"        ask)
@@ -148,14 +147,13 @@ and `aidermacs-subtree-only' (see its documentation for details)."
   :type '(repeat string))
 
 (defcustom aidermacs-global-read-only-files '()
-  "When non-nil, add read-only files to the aidermacs session. This
-is for files that are set not relative to project
-directory, ie. project agnostic"
+  "List of read-only files to add to the aidermacs session.
+These paths are project-agnostic, i.e. not relative to the project root."
   :type '(repeat string))
 
 (defcustom aidermacs-project-read-only-files '()
-  "When non-nil, add read-only files to the aidermacs session. This
-is for files that exist relative to the project root."
+  "List of read-only files to add to the aidermacs session.
+These paths are relative to the project root."
   :type '(repeat string))
 
 (defcustom aidermacs-subtree-only nil
@@ -234,7 +232,7 @@ Uses cached version per-workspace if available to avoid repeated process calls."
 
 (defun aidermacs-clear-aider-version-cache (&optional all)
   "Clear the cached aider version.
-With prefix argument ALL (C-u), clear all cached versions.
+With prefix argument ALL, clear all cached versions.
 Without prefix, clear only the cache for the current workspace.
 Call this after upgrading aider to ensure the correct version is detected."
   (interactive "P")
@@ -475,7 +473,7 @@ If supplied, SUFFIX is appended to the buffer name within the earmuffs."
               (or suffix "")))))
 
 (defun aidermacs--live-p (buffer-name)
-  "Return t if the aider buffer is availble and process is currently running"
+  "Return t if BUFFER-NAME exists and its aider process is running."
   (and (get-buffer buffer-name)
        (process-live-p (get-buffer-process (or buffer-name (aidermacs-get-buffer-name))))))
 
@@ -596,7 +594,7 @@ This is useful for working in monorepos where you want to limit aider's scope."
     (aidermacs-run)))
 
 (defun aidermacs-run-in-directory (directory)
-  "Prompt for a directory and run aidermacs with --subtree-only flag.
+  "Run aidermacs in DIRECTORY with the --subtree-only flag.
 This is useful for working in complex monorepos with nested subprojects."
   (interactive
    (list (read-file-name "Choose a directory: " nil nil t nil 'file-directory-p)))
@@ -879,7 +877,7 @@ Use highlighted region as context unless IGNORE-CONTEXT is set to non-nil."
 
 (defun aidermacs--detect-code-change-region ()
   "Select the underlying region based on paragraph boundaries.
-Returns a cons cell (START . END) of the detected region, or nil if no region found."
+Return a cons cell (START . END) of the detected region, or nil if none found."
   (save-excursion
     (let ((start (point))
           (end (point)))
@@ -1474,7 +1472,7 @@ This updates aider's understanding of the repository structure and files."
   (message "Refreshing repository map..."))
 
 (defun aidermacs-send-voice ()
-  "send /voice command to aidermacs"
+  "Send the /voice command to aidermacs."
   (interactive)
   (aidermacs--send-command "/voice")
   (message "aidermacs awaiting speech"))

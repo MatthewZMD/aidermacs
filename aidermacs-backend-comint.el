@@ -190,14 +190,15 @@ are next states.")
         aidermacs--syntax-last-output-pos nil))
 
 (defun aidermacs--set-syntax-major-mode ()
-(let ((mode (aidermacs--guess-major-mode)))
-  (with-current-buffer aidermacs--syntax-work-buffer
-    (unless (eq mode major-mode)
-      (condition-case e
-          (let ((inhibit-message t)
-                (diff-update-on-the-fly nil))
-            (funcall mode))
-        (error "aidermacs: Failed to init major-mode `%s' for font-locking: %s" mode e))))))
+  "Set the major mode of the syntax work buffer to match the current block."
+  (let ((mode (aidermacs--guess-major-mode)))
+    (with-current-buffer aidermacs--syntax-work-buffer
+      (unless (eq mode major-mode)
+        (condition-case e
+            (let ((inhibit-message t)
+                  (diff-update-on-the-fly nil))
+              (funcall mode))
+          (error "aidermacs: Failed to init major-mode `%s' for font-locking: %s" mode e))))))
 
 (defun aidermacs-fontify-blocks (_output)
   "Fontify search/replace blocks in comint output.
