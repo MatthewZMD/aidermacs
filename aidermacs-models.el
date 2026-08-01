@@ -71,8 +71,7 @@ Respects the `AIDER_WEAK_MODEL' environment variable if set."
 (defcustom aidermacs-litellm-prices-file nil
   "Manual path to litellm model_prices_and_context_window.json.
 If set, use this path directly instead of searching.
-Example: \"~/.local/lib/python3.11/site-packages/litellm/\
-model_prices_and_context_window.json\""
+Example: \"/path/to/litellm/model_prices_and_context_window.json\""
   :type '(choice (const :tag "Auto-detect" nil)
                  (file :tag "Specify path"))
   :group 'aidermacs-models)
