@@ -80,6 +80,16 @@ Example: \"~/.local/lib/python3.11/site-packages/litellm/model_prices_and_contex
   :type 'integer
   :group 'aidermacs-models)
 
+(defcustom aidermacs-model-filter-mode 'all
+  "How to filter models in the selection list.
+- `configured-only': Only show models from the model settings file
+- `configured-first': Show configured models first, then all others
+- `all': Show all models (no filtering)"
+  :type '(choice (const :tag "Only configured models" configured-only)
+                 (const :tag "Configured models first" configured-first)
+                 (const :tag "All models" all))
+  :group 'aidermacs-models)
+
 (defvar aidermacs--litellm-prices-cache nil
   "Cache of litellm model prices. Alist mapping model-id to ((input-price . val) (output-price . val)).")
 
@@ -88,6 +98,45 @@ Example: \"~/.local/lib/python3.11/site-packages/litellm/model_prices_and_contex
 
 (defvar aidermacs--litellm-file-path-cache nil
   "Cache of the litellm prices file path.")
+
+(defun aidermacs--find-model-settings-file ()
+  "Find the aider model settings YAML file.
+Searches in order: env var, homedir, git root, cwd.
+Default filename is `.aider.model.settings.yml' (matching aider's behavior)."
+  (or (getenv "AIDER_MODEL_SETTINGS_FILE")
+      (let* ((default-file ".aider.model.settings.yml")
+             (patterns
+              (list
+               (expand-file-name (concat "~/" default-file))  ; homedir
+               (when-let ((root (aidermacs-project-root)))
+                 (expand-file-name default-file root))        ; git root
+               (expand-file-name default-file)                ; cwd
+               )))
+        (cl-some (lambda (p)
+                   (when (and p (file-exists-p p)) p))
+                 patterns))))
+
+(defun aidermacs--read-configured-models ()
+  "Read model names from the aider model settings YAML file.
+Returns a list of model name strings extracted from '- name:' entries."
+  (let ((file (aidermacs--find-model-settings-file)))
+    (when (and file (file-exists-p file))
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let (models)
+          (goto-char (point-min))
+          ;; Match "- name: <model-id>" lines
+          (while (re-search-forward "^- name:[ \t]+\\(.+\\)$" nil t)
+            (let ((model-name (string-trim (match-string 1))))
+              (when (and (not (string-empty-p model-name))
+                         (not (string-prefix-p "#" model-name)))
+                (push model-name models))))
+          (nreverse models))))))
+
+(defun aidermacs--model-id-match-p (configured-id model-id)
+  "Check if CONFIGURED-ID matches MODEL-ID.
+Uses exact match only - no fuzzy matching across providers."
+  (string= configured-id model-id))
 
 (defun aidermacs--find-litellm-prices-file ()
   "Find the local litellm prices file from Aider's installation."
@@ -300,16 +349,29 @@ Returns a list of (model . rank) cons cells, where rank starts from 1."
              for item in top-n
              collect (cons (car item) idx))))
 
-(defun aidermacs--make-model-annotator (cheapest-models)
+(defun aidermacs--make-model-annotator (cheapest-models configured-models)
   "Create annotation function for the cheapest models.
-CHEAPEST-MODELS is a list of (model . rank) from `aidermacs--get-cheapest-models'."
+CHEAPEST-MODELS is a list of (model . rank) from `aidermacs--get-cheapest-models'.
+CONFIGURED-MODELS is a list of model IDs that are user-configured."
   (let ((rank-map (make-hash-table :test 'equal))
-        (ids (mapcar (lambda (pair) (alist-get 'id (car pair))) cheapest-models)))
+        (configured-set (make-hash-table :test 'equal)))
+    ;; Build rank map from cheapest models
     (dolist (entry cheapest-models)
       (puthash (alist-get 'id (car entry)) (cdr entry) rank-map))
+    ;; Build configured set from all configured models
+    (dolist (id configured-models)
+      (puthash id t configured-set))
     (lambda (cand-id)
-      (when-let ((rank (gethash cand-id rank-map)))
-        (format " [Rank %d - Cheapest]" rank)))))
+      (let ((rank (gethash cand-id rank-map))
+            (is-configured (gethash cand-id configured-set)))
+        (cond
+         ((and rank is-configured)
+          (format " [Rank %d - Cheapest] [Configured]" rank))
+         (rank
+          (format " [Rank %d - Cheapest]" rank))
+         (is-configured
+          " [Configured]")
+         (t nil))))))
 
 (defun aidermacs--select-model (&optional set-weak-model)
   "Provide model selection with completion, handling main/weak/editor models.
@@ -328,7 +390,36 @@ When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
                  '("Main/Reasoning Model" "Editing Model")
                  nil nil))
                (t "Main Model")))
-             (annotator (aidermacs--make-model-annotator (aidermacs--get-cheapest-models aidermacs--cached-models 500)))
+             ;; 1. Read configured models from settings file
+             (configured-models (aidermacs--read-configured-models))
+             ;; 2. Mark all models with configured-p property
+             (marked-models
+              (mapcar (lambda (m)
+                        (let* ((id (alist-get 'id m))
+                               (is-configured
+                                (cl-some (lambda (cfg-id)
+                                           (aidermacs--model-id-match-p cfg-id id))
+                                         configured-models)))
+                          (append m `((configured-p . ,is-configured)))))
+                      aidermacs--cached-models))
+             ;; 3. Filter/sort based on filter mode
+             (filtered-models
+              (pcase aidermacs-model-filter-mode
+                ('configured-only
+                 (if configured-models
+                     (seq-filter (lambda (m) (alist-get 'configured-p m)) marked-models)
+                   marked-models))
+                ('configured-first
+                 (if configured-models
+                     (let ((configured (seq-filter (lambda (m) (alist-get 'configured-p m)) marked-models))
+                           (others (seq-remove (lambda (m) (alist-get 'configured-p m)) marked-models)))
+                       (append configured others))
+                   marked-models))
+                (_ marked-models)))
+             ;; 4. Build annotator from cheapest and configured models
+             (annotator (aidermacs--make-model-annotator
+                         (aidermacs--get-cheapest-models filtered-models 500)
+                         configured-models))
              (candidates
               (mapcar (lambda (m)
                         (let* ((id (alist-get 'id m))
@@ -339,7 +430,7 @@ When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
                                                 id-str
                                               (format "%-80s %s" id-str price-str-safe))))
                           (cons display-str id-str)))
-                      aidermacs--cached-models))
+                      filtered-models))
              (model (completing-read
                      (format "Select %s: " model-type)
                      (lambda (str pred action)
