@@ -146,7 +146,6 @@ Uses exact match only - no fuzzy matching across providers."
       (when aidermacs-litellm-prices-file
         (let ((expanded (expand-file-name aidermacs-litellm-prices-file)))
           (when (file-exists-p expanded)
-            (message "Using user-specified litellm prices file: %s" expanded)
             (setq aidermacs--litellm-file-path-cache expanded))))
       (let ((possible-patterns
              (append
@@ -228,37 +227,49 @@ Uses exact match only - no fuzzy matching across providers."
   "Fetch model prices from OpenRouter API.
 Returns an alist of model-id to ((input-price . val) (output-price . val)).
 Model IDs are prefixed with \"openrouter/\"."
-  (condition-case err
-      (let* ((url-request-method "GET")
-             (url-request-extra-headers '(("Content-Type" . "application/json")))
-             (buf (url-retrieve-synchronously
-                   "https://openrouter.ai/api/v1/models"
-                   t nil 10))
-             response data result)
-        (unwind-protect
-            (with-current-buffer buf
-              (goto-char url-http-end-of-headers)
-              (let* ((json-object-type 'alist)
-                     (json-key-type 'string)
-                     (json-array-type 'list))
-                (setq response (json-read)))
-              (setq data (cdr (assoc "data" response)))
-              (dolist (model data)
-                (let* ((id (cdr (assoc "id" model)))
-                       (pricing (cdr (assoc "pricing" model)))
-                       (prompt (when pricing (cdr (assoc "prompt" pricing))))
-                       (completion (when pricing (cdr (assoc "completion" pricing)))))
-                  (when (and id prompt completion)
-                    (push (cons (concat "openrouter/" (if (stringp id) id (format "%s" id)))
-                                `((input-price . ,(if (stringp prompt) (string-to-number prompt) prompt))
-                                  (output-price . ,(if (stringp completion) (string-to-number completion) completion))))
-                          result))))
-              result)
-          (when (buffer-live-p buf)
-            (kill-buffer buf))))
-    (error
-     (message "Failed to fetch OpenRouter prices: %s" (error-message-string err))
-     nil)))
+  (let ((attempt 0)
+        result)
+    (while (and (< attempt 2) (not result))
+      (setq attempt (1+ attempt))
+      (when (> attempt 1)
+        (sleep-for 1.5))
+      (condition-case err
+          (let* ((url-request-method "GET")
+                 (url-request-extra-headers '(("Content-Type" . "application/json")))
+                 (buf (url-retrieve-synchronously
+                       "https://openrouter.ai/api/v1/models"
+                       t nil 10))
+                 response data)
+            (unwind-protect
+                (with-current-buffer buf
+                  ;; Check HTTP status before attempting JSON parse
+                  (let ((status (if (boundp 'url-http-response-status)
+                                    url-http-response-status
+                                  0)))
+                    (if (or (zerop status) (>= status 400))
+                        nil
+                      (goto-char url-http-end-of-headers)
+                      (let* ((json-object-type 'alist)
+                             (json-key-type 'string)
+                             (json-array-type 'list))
+                        (setq response (json-read)))
+                      (setq data (cdr (assoc "data" response)))
+                      (dolist (model data)
+                        (let* ((id (cdr (assoc "id" model)))
+                               (pricing (cdr (assoc "pricing" model)))
+                               (prompt (when pricing (cdr (assoc "prompt" pricing))))
+                               (completion (when pricing (cdr (assoc "completion" pricing)))))
+                          (when (and id prompt completion)
+                            (push (cons (concat "openrouter/" (if (stringp id) id (format "%s" id)))
+                                        `((input-price . ,(if (stringp prompt) (string-to-number prompt) prompt))
+                                          (output-price . ,(if (stringp completion) (string-to-number completion) completion))))
+                                  result))))
+                      (setq result (nreverse result)))))
+              (when (buffer-live-p buf)
+                (kill-buffer buf))))
+        (error
+         (setq result nil))))
+    result))
 
 (defun aidermacs--build-price-index (litellm-prices)
   "Build fast lookup indexes from LITELLM-PRICES.
@@ -313,7 +324,12 @@ Returns a list (exact-hash family-hash provider-family-hash)."
               (push entry merged))))
         (when merged
           (setq aidermacs--litellm-prices-cache merged)
-          (setq aidermacs--litellm-prices-cache-timestamp (float-time)))
+          ;; If OpenRouter fetch failed, keep the cache short-lived so we retry
+          ;; the network on the next model fetch instead of locking buggy state.
+          (setq aidermacs--litellm-prices-cache-timestamp
+                (if openrouter-prices
+                    (float-time)
+                  (- (float-time) (- aidermacs-litellm-prices-cache-duration 60)))))
         merged))))
 
 (defvar aidermacs--cached-models nil
@@ -433,8 +449,8 @@ When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
                                                 id-str
                                               (format "%-80s %s" id-str price-str-safe))))
                           (cons display-str id-str)))
-                      filtered-models))
-             (model (completing-read
+                      filtered-models)))
+        (let ((model (completing-read
                      (format "Select %s: " model-type)
                      (lambda (str pred action)
                        (if (eq action 'metadata)
@@ -444,24 +460,24 @@ When SET-WEAK-MODEL is non-nil, only allow setting the weak model."
                              (cycle-sort-function . identity))
                          (complete-with-action action candidates str pred)))
                      nil t)))
-        (when model
-          (let ((real-model (cdr (assoc model candidates))))
-            (when real-model
-              (cond
-               (set-weak-model
-                (setq aidermacs-weak-model real-model)
-                (aidermacs--send-command (format "/weak-model %s" real-model)))
-               ((and is-architect-mode supports-specific-model)
-                (pcase model-type
-                  ("Main/Reasoning Model"
-                   (setq aidermacs-architect-model real-model)
-                   (aidermacs--send-command (format "/model %s" real-model)))
-                  ("Editing Model"
-                   (setq aidermacs-editor-model real-model)
-                   (aidermacs--send-command (format "/editor-model %s" real-model)))))
-               (t
-                (setq aidermacs-default-model real-model)
-                (aidermacs--send-command (format "/model %s" real-model))))))))
+          (when model
+            (let ((real-model (cdr (assoc model candidates))))
+              (when real-model
+                (cond
+                 (set-weak-model
+                  (setq aidermacs-weak-model real-model)
+                  (aidermacs--send-command (format "/weak-model %s" real-model)))
+                 ((and is-architect-mode supports-specific-model)
+                  (pcase model-type
+                    ("Main/Reasoning Model"
+                     (setq aidermacs-architect-model real-model)
+                     (aidermacs--send-command (format "/model %s" real-model)))
+                    ("Editing Model"
+                     (setq aidermacs-editor-model real-model)
+                     (aidermacs--send-command (format "/editor-model %s" real-model)))))
+                 (t
+                  (setq aidermacs-default-model real-model)
+                  (aidermacs--send-command (format "/model %s" real-model)))))))))
     (quit (message "Model selection cancelled"))))
 
 (defun aidermacs--parse-model-identity (model-id)
@@ -473,7 +489,6 @@ Examples:
   \"claude-3-5-sonnet-20241022\" ->
     ((provider . nil) (family . \"claude-3-5-sonnet\") ...)"
   (unless (stringp model-id)
-    (message "Warning: model-id is not a string: %S (type: %s)" model-id (type-of model-id))
     (setq model-id (format "%s" model-id)))
   (let* ((parts (split-string model-id "/"))
          (has-provider (> (length parts) 1))
@@ -502,8 +517,6 @@ CALLBACK is called after models are fetched and cached."
    (lambda ()
      (if (not (stringp aidermacs--current-output))
          (progn
-           (message "Error: aidermacs--current-output is not a string: %S (type: %s)"
-                    aidermacs--current-output (type-of aidermacs--current-output))
            (setq aidermacs--cached-models nil)
            (when callback (funcall callback)))
        (let* ((all-models
@@ -557,13 +570,19 @@ CALLBACK is called after models are fetched and cached."
   "Interactively select and change AI model in current aidermacs session.
 With prefix ARG, only allow setting the weak model."
   (interactive "P")
-  (if aidermacs--cached-models
-      (aidermacs--select-model arg)
-    (message "Fetching available models...")
-    (aidermacs--get-available-models
-     (lambda ()
-       (message "Models fetched successfully")
-       (aidermacs--select-model arg)))))
+  (let ((prices-stale (or (null aidermacs--litellm-prices-cache-timestamp)
+                          (>= (- (float-time) aidermacs--litellm-prices-cache-timestamp)
+                              aidermacs-litellm-prices-cache-duration))))
+    (if (and aidermacs--cached-models (not prices-stale))
+        (aidermacs--select-model arg)
+      (progn
+        (when prices-stale
+          (setq aidermacs--cached-models nil))
+        (message "Fetching available models...")
+        (aidermacs--get-available-models
+         (lambda ()
+           (message "Models fetched successfully")
+           (aidermacs--select-model arg)))))))
 
 (provide 'aidermacs-models)
 ;;; aidermacs-models.el ends here
