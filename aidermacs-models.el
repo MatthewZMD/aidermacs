@@ -233,7 +233,7 @@ Model IDs are prefixed with \"openrouter/\"."
       (setq attempt (1+ attempt))
       (when (> attempt 1)
         (sleep-for 1.5))
-      (condition-case err
+      (condition-case _err
           (let* ((url-request-method "GET")
                  (url-request-extra-headers '(("Content-Type" . "application/json")))
                  (buf (url-retrieve-synchronously
