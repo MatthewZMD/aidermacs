@@ -10,7 +10,7 @@
 ;;; Commentary:
 
 ;; Provides model selection for Aidermacs, allowing choice between
-;; different AI models for Aider sessions. Supports fetching models
+;; different AI models for Aider sessions.  Supports fetching models
 ;; from various API providers and caching for faster access.
 ;;
 ;; Features:

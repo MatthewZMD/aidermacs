@@ -11,7 +11,7 @@
 
 ;;
 ;; Implements Comint backend for Aidermacs, providing interface to
-;; interact with Aider process in Emacs buffer. Handles command
+;; interact with Aider process in Emacs buffer.  Handles command
 ;; sending, output display, and interaction flow.
 ;;
 ;; Features:

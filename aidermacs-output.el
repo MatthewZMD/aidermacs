@@ -533,7 +533,7 @@ User can select a file to view its diff."
 
 
 (defun aidermacs--show-ediff-for-file (file)
-  "Uses the pre-edit buffer stored to compare with the current FILE state."
+  "Use the pre-edit buffer stored to compare with the current FILE state."
   (setq aidermacs--pre-ediff-window-config (current-window-configuration))
 
   (let* ((full-path (expand-file-name file (aidermacs-project-root)))

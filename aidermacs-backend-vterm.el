@@ -10,7 +10,7 @@
 ;;; Commentary:
 
 ;; Implements VTerm backend for Aidermacs, providing interface to
-;; interact with Aider process in VTerm buffer. Uses VTerm package
+;; interact with Aider process in VTerm buffer.  Uses VTerm package
 ;; for rich terminal experience.
 ;;
 ;; Features:
@@ -211,11 +211,11 @@ Has effect only when using the vterm backend."
     "--completion-menu-color" default
     "--completion-menu-current-color" highlight)
   "Emacs faces to use for aider color flags.
-Keys are the commandline arguments to send to aider. Values are either faces,
+Keys are the commandline arguments to send to aider.  Values are either faces,
 or strings containing color codes like \"#00ccff\".
 
 For any face specified, the :foreground attribute will be used to determine the
-color. If that is unspecified, this falls back to the default face foreground
+color.  If that is unspecified, this falls back to the default face foreground
 color."
   :type 'plist)
 
@@ -223,11 +223,11 @@ color."
   '("--completion-menu-bg-color" default
     "--completion-menu-current-bg-color" highlight)
   "Emacs faces to use for aider color flags.
-Keys are the commandline arguments to send to aider. Values are either faces,
+Keys are the commandline arguments to send to aider.  Values are either faces,
 or strings containing color codes like \"#00ccff\".
 
 For any face specified, the :background attribute will be used to determine the
-color. If that is unspecified, this falls back to the default face foreground
+color.  If that is unspecified, this falls back to the default face foreground
 color."
   :type 'plist)
 

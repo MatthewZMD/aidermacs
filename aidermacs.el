@@ -11,12 +11,12 @@
 ;;; Commentary:
 
 ;; Aidermacs integrates with Aider (https://aider.chat/) for AI-assisted code
-;; modification in Emacs. Aider lets you pair program with LLMs to edit code
-;; in your local git repository. It works with both new projects and existing
+;; modification in Emacs.  Aider lets you pair program with LLMs to edit code
+;; in your local git repository.  It works with both new projects and existing
 ;; code bases, supporting Claude, DeepSeek, ChatGPT, and can connect to almost
-;; any LLM including local models. Think of it as having a helpful coding
+;; any LLM including local models.  Think of it as having a helpful coding
 ;; partner that can understand your code, suggest improvements, fix bugs, and
-;; even write new code for you. Whether you're working on a new feature,
+;; even write new code for you.  Whether you're working on a new feature,
 ;; debugging, or just need help understanding some code, Aidermacs provides an
 ;; intuitive way to collaborate with AI while staying in your familiar Emacs
 ;; environment.
@@ -95,7 +95,7 @@ It respects `aidermacs-program` which can be a string or a list of strings."
                             #'executable-find))
                (program (cl-some finder-fn programs)))
           (unless program
-            (error "Aider executable not found. Checked: %s" programs))
+            (error "Aider executable not found.  Checked: %s" programs))
           (puthash key program aidermacs--resolved-programs)
           program))))
 
@@ -1006,7 +1006,7 @@ but wrapping them with double quotes that aider understands."
 
 (defun aidermacs--add-files-helper (files &optional read-only message)
   "Helper function to add files with read-only flag.
-FILES is a list of file paths to add. READ-ONLY determines if files are added
+FILES is a list of file paths to add.  READ-ONLY determines if files are added
 as read-only.  MESSAGE can override the default success message."
   (let* ((cmd (if read-only "/read-only" "/add"))
          (command (aidermacs--prepare-file-paths-for-command cmd files))
@@ -1049,7 +1049,7 @@ With prefix argument `C-u', add as read-only."
 (defun aidermacs--pick-project-file ()
   "Prompt for a file in the current project using `completing-read`.
 This function attempts to use `project.el` to find files if available
-and consistent with `aidermacs-project-root`. Otherwise, it falls back
+and consistent with `aidermacs-project-root`.  Otherwise, it falls back
 to a recursive directory listing based on `aidermacs-project-root`."
   (interactive)
   (let* ((aidermacs-root-raw (aidermacs-project-root))
@@ -1397,7 +1397,7 @@ These are exact filename matches (including the dot prefix)."
   :type '(repeat string))
 
 (defun aidermacs--maybe-enable-minor-mode ()
-  "Determines whether to enable `aidermacs-minor-mode'."
+  "Determine whether to enable `aidermacs-minor-mode'."
   (when (and buffer-file-name
              (member (file-name-nondirectory buffer-file-name)
                      aidermacs-auto-mode-files))
