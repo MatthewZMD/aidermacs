@@ -648,6 +648,37 @@ With Aidermacs, you get:
 
 [<img src="https://img.youtube.com/vi/fB3-ie6zs4Y/0.jpg" width=600>](https://www.youtube.com/watch?v=fB3-ie6zs4Y)
 
+## Pair a phone with Build Remote Agent
+
+Aidermacs (and the Aider / [cecli](https://github.com/cecli-dev/cecli) binary it
+wraps) can keep running in Emacs while a phone running
+[Build Remote Agent](https://grokbuildremote.com/) spectates the same desktop
+session. Protocol `gbr/1`. Independent product; not affiliated with xAI or SpaceX.
+
+```bash
+# macOS / Linux
+curl -fsSL https://grokbuildremote.com/install.sh | bash
+gbr-agent version          # need v0.6.0+
+gbr-agent pair             # QR in browser + printed 8-char code
+gbr-agent run              # leave running, then use Aidermacs as usual
+```
+
+Phone: open Build Remote Agent → scan the QR (or type the 8-char code).
+**Unpair** in Settings before changing PCs. Force-close is not enough.
+
+After `gbr-agent run`, attach only `http://127.0.0.1:8788` or MCP stdio
+`gbr-mcp`. The phone is spectator + veto; Emacs/Aider stays the orchestrator.
+
+```bash
+curl -sS http://127.0.0.1:8788/health
+curl -sS http://127.0.0.1:8788/v1/sessions
+```
+
+Do not commit mailbox keys. Phone **Settings → Bot API** is the only place the
+relay key is copied.
+
+Agent (MIT): https://github.com/LinespottingOrg/GrokBuildRemote-Agents
+
 ## Community-Driven Development
 
 Aidermacs thrives on community involvement. We believe collaborative development with user and contributor input creates the best software. We encourage you to:
