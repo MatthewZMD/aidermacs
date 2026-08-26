@@ -417,7 +417,10 @@ This is used when you want to target an existing session."
 
 (defun aidermacs-get-buffer-name (&optional use-existing suffix)
   "Generate the aidermacs buffer name based on project root or current directory.
-If USE-EXISTING is non-nil, use an existing buffer instead of creating new.
+When USE-EXISTING is non-nil, return an existing session buffer name.
+Otherwise, reuse an existing session whose directory contains the current
+directory; otherwise create a new buffer name based on `aidermacs-subtree-only'
+or the project root.
 If supplied, SUFFIX is appended to the buffer name within the earmuffs."
   (if use-existing
       (aidermacs-select-buffer-name)
@@ -443,28 +446,13 @@ If supplied, SUFFIX is appended to the buffer name within the earmuffs."
                            existing-session-paths)
                           ;; Sort by length (deeper paths are more specific)
                           (lambda (a b) (> (length a) (length b)))))
-                   (closest-session-containing-current-dir (car sessions-containing-current-dir))
-
-                   (sessions-within-current-dir ;; Sessions whose paths are within current-dir-truename
-                    (sort (cl-remove-if-not
-                           (lambda (session-path)
-                             (file-in-directory-p session-path current-dir-truename))
-                           existing-session-paths)
-                          ;; Sort by length (deeper paths are more specific)
-                          (lambda (a b) (> (length a) (length b))))))
-
+                   (closest-session-containing-current-dir (car sessions-containing-current-dir)))
               (cond
                ;; 1. Current directory is INSIDE an existing session's directory.
                (closest-session-containing-current-dir
                 closest-session-containing-current-dir)
 
-               ;; 2. Current directory is an ANCESTOR of exactly ONE existing session.
-               ((and (not closest-session-containing-current-dir) ; Only if not already covered by case 1
-                     sessions-within-current-dir
-                     (= 1 (length sessions-within-current-dir)))
-                (car sessions-within-current-dir))
-
-               ;; 3. Fallback logic (original logic for new session or ambiguous cases).
+               ;; 2. Fallback logic: use current directory if subtree-only, else project root.
                (aidermacs-subtree-only current-dir-truename)
                (t (file-truename root)))))) ; Ensure root is also truename for consistency
 
