@@ -213,10 +213,17 @@ _OUTPUT is the text to be processed."
         (pcase (car aidermacs--syntax-state)
           ('nil
            (if (re-search-forward aidermacs-block-re nil t)
-               (setq aidermacs--syntax-last-output-pos (point)
-                     aidermacs--syntax-state (if (equal aidermacs-search-marker (match-string 1))
-                                                 '(search-block)
-                                               '(fence)))
+               (if (eobp)
+                   ;; Unterminated final line — wait for more input before
+                   ;; opening a block.
+                   (progn
+                     (setq aidermacs--syntax-last-output-pos (line-beginning-position))
+                     (setq end t))
+                 (setq aidermacs--syntax-last-output-pos (point)
+                       aidermacs--syntax-state
+                       (if (equal aidermacs-search-marker (match-string 1))
+                           '(search-block)
+                         '(fence))))
              (goto-char (point-max))
              (setq aidermacs--syntax-last-output-pos
                    (max aidermacs--syntax-last-output-pos (line-beginning-position)))
@@ -329,7 +336,7 @@ _OUTPUT is the text to be processed."
    ;; check if the block has a language id
    (when (save-excursion
            (end-of-line)
-           (re-search-backward "^[:space:]*``` *\\([^[:space:]]+\\)" (line-beginning-position -1) t))
+           (re-search-backward "^[[:space:]]*``` *\\([^[:space:]]+\\)" (line-beginning-position -1) t))
      (let* ((lang (downcase (match-string 1)))
             (mode (map-elt aidermacs-language-name-map lang lang)))
        (intern-soft (concat mode "-mode"))))
@@ -340,7 +347,8 @@ _OUTPUT is the text to be processed."
      (let ((file (match-string 1)))
        (cdr (cl-assoc-if (lambda (re) (string-match re file)) auto-mode-alist))))
    (progn
-     (message "aidermacs: can't detect major mode at %d" (point))
+     ;; This fallback is normal for fences without an explicit language id.
+     ;; Unconditional `message' turns every such code block into *Messages* spam.
      'fundamental-mode)))
 
 (defun aidermacs--comint-start-spinner ()
