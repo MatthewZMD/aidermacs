@@ -83,7 +83,7 @@
 PROC is the process to check.  ORIG-FILTER is the original process filter.
 START-POINT is the starting position for output capture.
 If the finish sequence is detected, store the output via
-`aidermacs--store-output`, restore ORIG-FILTER, and return t."
+`aidermacs--store-output', restore ORIG-FILTER, and return t."
   (when (buffer-live-p (process-buffer proc))
     (with-current-buffer (process-buffer proc)
       ;; Render vterm if the function is available
@@ -198,9 +198,14 @@ Converts multiple spaces to newlines and trims trailing whitespace."
     fixed-text))
 
 (defcustom aidermacs-vterm-use-theme-colors t
-  "Whether to use Emacs theme colors for aider.
-Has effect only when using the vterm backend."
-  :type 'boolean)
+  "Control how aider colors are handled in the vterm backend.
+`t' uses colors derived from Emacs faces.
+`off' passes no color/theme arguments.
+`nil' passes only --dark-mode or --light-mode based on the Emacs
+frame background."
+  :type '(choice (const :tag "Use Emacs theme colors" t)
+                 (const :tag "No color/theme args" off)
+                 (const :tag "Light/dark only" nil)))
 
 (defcustom aidermacs-vterm-theme-foreground-colors-plist
   '("--user-input-color" font-lock-function-name-face
@@ -258,15 +263,19 @@ If unspecified, return ATTR from default face."
 (defun aidermacs--vterm-theme-args ()
   "Create arguments for aider to try and match the current Emacs theme.
 See `aidermacs-theme-colors-plist'."
-  (if aidermacs-vterm-use-theme-colors
-      (nconc
-       (mapcar (apply-partially #'aidermacs--vterm-convert-color-arg :foreground)
-               aidermacs-vterm-theme-foreground-colors-plist)
-       (mapcar (apply-partially #'aidermacs--vterm-convert-color-arg :background)
-               aidermacs-vterm-theme-background-colors-plist))
+  (cond
+   ((eq aidermacs-vterm-use-theme-colors 'off)
+    nil)
+   ((null aidermacs-vterm-use-theme-colors)
     (if (eq (frame-parameter nil 'background-mode) 'dark)
         '("--dark-mode")
-      '("--light-mode"))))
+      '("--light-mode")))
+   (t
+    (nconc
+     (mapcar (apply-partially #'aidermacs--vterm-convert-color-arg :foreground)
+             aidermacs-vterm-theme-foreground-colors-plist)
+     (mapcar (apply-partially #'aidermacs--vterm-convert-color-arg :background)
+             aidermacs-vterm-theme-background-colors-plist)))))
 
 (defun aidermacs-run-vterm (program args buffer-name)
   "Create a vterm-based buffer and run aidermacs program.
