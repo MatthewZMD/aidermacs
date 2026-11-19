@@ -536,9 +536,9 @@ set `aidermacs-default-chat-mode' to 'architect' instead."
                  (list "--model"        (aidermacs-get-architect-model)
                        "--editor-model" (aidermacs-get-editor-model)))
 
-               ;; default --model when we’re still in plain code mode and user
+               ;; default --model when we’re not in architect mode and user
                ;; didn’t supply one
-               (when (and (not needs-chat-flag) (not has-model-arg))
+               (when (and (not architect?) (not has-model-arg))
                  (list "--model" aidermacs-default-model))
 
                ;; existing flags that follow (no change)
